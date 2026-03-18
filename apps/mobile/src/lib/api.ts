@@ -1,7 +1,9 @@
 import axios from 'axios';
+import { supabase } from './supabase';
+import Config from 'react-native-config';
 
 const api = axios.create({
-  baseURL: process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000',
+  baseURL: Config.API_URL || 'http://localhost:8000',
 });
 
 api.interceptors.request.use(async (config) => {

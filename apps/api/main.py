@@ -1,16 +1,20 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from core.sentry import init_sentry
+from core.error_handler import register_exception_handlers
 
 def init_indexes():
     pass
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    init_sentry()
     init_indexes()
     yield
 
 app = FastAPI(lifespan=lifespan)
+register_exception_handlers(app)
 
 app.add_middleware(
     CORSMiddleware,
