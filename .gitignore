@@ -1,0 +1,15 @@
+node_modules
+.env*
+__pycache__
+dist
+.DS_Store
+*.pyc
+build/
+**/android/.gradle
+**/android/app/build
+**/android/build
+**/ios/Pods
+.venv
+.venv/
+**/.venv
+*/.venv/
