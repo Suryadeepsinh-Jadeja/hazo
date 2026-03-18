@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { ChevronLeft } from 'lucide-react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 
@@ -129,17 +131,24 @@ export const QuestionsScreen = () => {
         contentContainerStyle={styles.listContent}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         renderItem={({ item }) => (
-          <View style={[styles.bubbleWrap, item.isUser ? styles.bubbleUserWrap : styles.bubbleAiWrap]}>
+          <Animated.View style={[styles.bubbleWrap, item.isUser ? styles.bubbleUserWrap : styles.bubbleAiWrap]} entering={FadeInDown.springify().damping(20).delay(200)}>
+            {!item.isUser && (
+              <View style={styles.bubbleAvatar}>
+                 <Text style={styles.avatarText}>M</Text>
+              </View>
+            )}
             <View style={[styles.bubble, item.isUser ? styles.bubbleUser : styles.bubbleAi]}>
               {item.isTyping ? (
                  <ActivityIndicator size="small" color={theme.colors.primary.inkMuted} style={styles.typingIndicator} />
               ) : (
-                <Text style={[styles.bubbleText, item.isUser ? styles.bubbleUserText : styles.bubbleAiText]}>
-                  {item.text}
-                </Text>
+                item.isUser ? (
+                  <Text style={styles.bubbleUserText}>{item.text}</Text>
+                ) : (
+                  <Text style={styles.bubbleAiText}>{item.text}</Text>
+                )
               )}
             </View>
-          </View>
+          </Animated.View>
         )}
       />
       {!messages.find(m => m.isTyping) && renderInputArea()}
@@ -160,6 +169,23 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: theme.spacing[12],
     flexDirection: 'row',
+  },
+  bubbleAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: theme.colors.accent.coralLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+    alignSelf: 'flex-end',
+    marginBottom: 4,
+  },
+  avatarText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.xs,
+    color: theme.colors.accent.coralDark,
+    fontWeight: theme.typography.fontWeights.bold,
   },
   bubbleUserWrap: {
     justifyContent: 'flex-end',

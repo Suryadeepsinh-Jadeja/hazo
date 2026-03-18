@@ -3,7 +3,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
 import Config from 'react-native-config';
 import { createClient } from '@supabase/supabase-js';
-import * as AuthSession from 'expo-auth-session';
 
 const supabaseUrl = Config.SUPABASE_URL || '';
 const supabaseAnonKey = Config.SUPABASE_ANON_KEY || '';
@@ -35,7 +34,7 @@ export const signInWithGoogle = async () => {
   return await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: AuthSession.makeRedirectUri(),
+      redirectTo: 'stride://auth',
     },
   });
 };

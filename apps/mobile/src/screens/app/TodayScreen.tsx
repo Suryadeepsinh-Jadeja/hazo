@@ -2,9 +2,9 @@ import React, { useCallback, useState, useEffect, memo, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal, Dimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from 'react-native-linear-gradient';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, withRepeat, withDelay, Easing } from 'react-native-reanimated';
-import { PlayCircle, Article, CheckCircle, Flame, Plus, Lock } from 'lucide-react-native';
+import { PlayCircle, FileText, CheckCircle, Flame, Plus, Lock, Clock, BookOpen } from 'lucide-react-native';
 import { Linking } from 'react-native';
 
 import { theme } from '../../constants/theme';

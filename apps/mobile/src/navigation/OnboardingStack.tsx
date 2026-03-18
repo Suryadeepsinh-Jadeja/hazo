@@ -23,7 +23,7 @@ export const OnboardingStack = () => {
       screenOptions={{
         headerStyle: { backgroundColor: theme.colors.neutral.cream },
         headerShadowVisible: false,
-        headerBackTitleVisible: false,
+        headerBackVisible: false,
         headerTintColor: theme.colors.primary.ink,
       }}
     >

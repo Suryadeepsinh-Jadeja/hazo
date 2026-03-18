@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView, Alert, RefreshControl } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -8,7 +8,7 @@ import { useNavigation } from '@react-navigation/native';
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 import { AddTaskModal } from '../../components/AddTaskModal';
-import * as Haptics from 'expo-haptics';
+import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 
 const FILTERS = ['All', 'Today', 'Overdue', 'Done'];
 
@@ -39,8 +39,10 @@ export const TasksScreen = () => {
   const completeMutation = useMutation({
     mutationFn: async (id: string) => api.post(`/api/v1/tasks/${id}/complete`),
     onSuccess: () => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      ReactNativeHapticFeedback.trigger('impactHeavy');
+    
+    setTimeout(() => {queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    }, 100); // Added a small delay for haptic feedback to register before UI update
     }
   });
 

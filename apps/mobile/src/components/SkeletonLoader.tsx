@@ -37,8 +37,8 @@ export const SkeletonLoader = ({
     <Animated.View 
       style={[
         { 
-          width, 
-          height, 
+          width: width as any, 
+          height: height as any, 
           borderRadius, 
           backgroundColor: '#E4DFD6' // Using the specific border color requested by prompt as shimmer base
         }, 

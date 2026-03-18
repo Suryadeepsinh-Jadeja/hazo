@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Dimensions, ActivityIndicator } from 'react-native';
 import { DownloadCloud, AlertCircle } from 'lucide-react-native';
-import { useQuery } from '@react-navigation/native';
+import { useQuery } from '@tanstack/react-query';
 import { useQuery as useReactQuery } from '@tanstack/react-query';
 import { RadarChart } from '../../components/RadarChart';
 import { theme } from '../../constants/theme';
