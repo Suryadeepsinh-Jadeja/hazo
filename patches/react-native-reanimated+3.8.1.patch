@@ -1,0 +1,115 @@
+diff --git a/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp b/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
+index b34579d..189bd9d 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
++++ b/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
+@@ -149,7 +149,7 @@ void NativeReanimatedModule::scheduleOnUI(
+     const jsi::Value &worklet) {
+   auto shareableWorklet = extractShareableOrThrow<ShareableWorklet>(
+       rt, worklet, "[Reanimated] Only worklets can be scheduled to run on UI.");
+-  uiScheduler_->scheduleOnUI([=] {
++  uiScheduler_->scheduleOnUI([=, this] {
+ #if JS_RUNTIME_HERMES
+     // JSI's scope defined here allows for JSI-objects to be cleared up after
+     // each runtime loop. Within these loops we typically create some temporary
+@@ -213,7 +213,7 @@ jsi::Value NativeReanimatedModule::registerEventHandler(
+       rt, worklet, "[Reanimated] Event handler must be a worklet.");
+   int emitterReactTagInt = emitterReactTag.asNumber();
+ 
+-  uiScheduler_->scheduleOnUI([=] {
++  uiScheduler_->scheduleOnUI([=, this] {
+     auto handler = std::make_shared<WorkletEventHandler>(
+         newRegistrationId, eventNameStr, emitterReactTagInt, handlerShareable);
+     eventHandlerRegistry_->registerEventHandler(std::move(handler));
+@@ -227,7 +227,7 @@ void NativeReanimatedModule::unregisterEventHandler(
+     const jsi::Value &registrationId) {
+   uint64_t id = registrationId.asNumber();
+   uiScheduler_->scheduleOnUI(
+-      [=] { eventHandlerRegistry_->unregisterEventHandler(id); });
++      [=, this] { eventHandlerRegistry_->unregisterEventHandler(id); });
+ }
+ 
+ jsi::Value NativeReanimatedModule::getViewProp(
+@@ -244,7 +244,7 @@ jsi::Value NativeReanimatedModule::getViewProp(
+   const auto funPtr = std::make_shared<jsi::Function>(
+       callback.getObject(rnRuntime).asFunction(rnRuntime));
+ 
+-  uiScheduler_->scheduleOnUI([=]() {
++  uiScheduler_->scheduleOnUI([=, this]() {
+     jsi::Runtime &uiRuntime = uiWorkletRuntime_->getJSIRuntime();
+     const auto propNameValue =
+         jsi::String::createFromUtf8(uiRuntime, propNameStr);
+@@ -724,7 +724,7 @@ jsi::Value NativeReanimatedModule::subscribeForKeyboardEvents(
+       handlerWorklet,
+       "[Reanimated] Keyboard event handler must be a worklet.");
+   return subscribeForKeyboardEventsFunction_(
+-      [=](int keyboardState, int height) {
++      [=, this](int keyboardState, int height) {
+         uiWorkletRuntime_->runGuarded(
+             shareableHandler, jsi::Value(keyboardState), jsi::Value(height));
+       },
+diff --git a/node_modules/react-native-reanimated/Common/cpp/ReanimatedRuntime/WorkletRuntimeDecorator.cpp b/node_modules/react-native-reanimated/Common/cpp/ReanimatedRuntime/WorkletRuntimeDecorator.cpp
+index b9d1b77..ba84f71 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/ReanimatedRuntime/WorkletRuntimeDecorator.cpp
++++ b/node_modules/react-native-reanimated/Common/cpp/ReanimatedRuntime/WorkletRuntimeDecorator.cpp
+@@ -9,6 +9,7 @@
+ #else
+ #include "Common/cpp/hidden_headers/Logger.h"
+ #endif
++#include <vector>
+ 
+ namespace reanimated {
+ 
+@@ -105,13 +106,12 @@ void WorkletRuntimeDecorator::decorate(
+             auto argsArray =
+                 shareableArgs->getJSValue(rt).asObject(rt).asArray(rt);
+             auto argsSize = argsArray.size(rt);
+-            // number of arguments is typically relatively small so it is ok to
+-            // to use VLAs here, hence disabling the lint rule
+-            jsi::Value args[argsSize]; // NOLINT(runtime/arrays)
++            std::vector<jsi::Value> args(argsSize);
+             for (size_t i = 0; i < argsSize; i++) {
+               args[i] = argsArray.getValueAtIndex(rt, i);
+             }
+-            remoteFun.asObject(rt).asFunction(rt).call(rt, args, argsSize);
++            const jsi::Value *argValues = args.data();
++            remoteFun.asObject(rt).asFunction(rt).call(rt, argValues, argsSize);
+           }
+         });
+       });
+diff --git a/node_modules/react-native-reanimated/android/src/reactNativeVersionPatch/ReanimatedUIManager/latest/com/swmansion/reanimated/layoutReanimation/ReanimatedUIManager.java b/node_modules/react-native-reanimated/android/src/reactNativeVersionPatch/ReanimatedUIManager/latest/com/swmansion/reanimated/layoutReanimation/ReanimatedUIManager.java
+index 2c6cb18..256906f 100644
+--- a/node_modules/react-native-reanimated/android/src/reactNativeVersionPatch/ReanimatedUIManager/latest/com/swmansion/reanimated/layoutReanimation/ReanimatedUIManager.java
++++ b/node_modules/react-native-reanimated/android/src/reactNativeVersionPatch/ReanimatedUIManager/latest/com/swmansion/reanimated/layoutReanimation/ReanimatedUIManager.java
+@@ -90,32 +90,6 @@ public class ReanimatedUIManager extends UIManagerModule {
+     super.setChildren(viewTag, childrenTags);
+   }
+ 
+-  /**
+-   * Replaces the View specified by oldTag with the View specified by newTag within oldTag's parent.
+-   * This resolves to a simple {@link #manageChildren} call, but React doesn't have enough info in
+-   * JS to formulate it itself.
+-   *
+-   * @deprecated This method will not be available in Fabric UIManager class.
+-   */
+-  @ReactMethod
+-  @Deprecated
+-  public void replaceExistingNonRootView(int oldTag, int newTag) {
+-    super.replaceExistingNonRootView(oldTag, newTag);
+-  }
+-
+-  /**
+-   * Method which takes a container tag and then releases all subviews for that container upon
+-   * receipt.
+-   *
+-   * @param containerTag the tag of the container for which the subviews must be removed
+-   * @deprecated This method will not be available in Fabric UIManager class.
+-   */
+-  @ReactMethod
+-  @Deprecated
+-  public void removeSubviewsFromContainerWithID(int containerTag) {
+-    super.removeSubviewsFromContainerWithID(containerTag);
+-  }
+-
+   /**
+    * Determines the location on screen, width, and height of the given view and returns the values
+    * via an async callback.
