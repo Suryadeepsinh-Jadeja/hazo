@@ -24,9 +24,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setUser: (user) => set({ user, isAuthenticated: !!user }),
   
   setSession: (session) => {
-    set({ session });
+    set({ session, isAuthenticated: !!session?.user });
     if (session?.user) {
       get().syncUserToBackend(session.user);
+    } else {
+      set({ user: null });
     }
   },
 

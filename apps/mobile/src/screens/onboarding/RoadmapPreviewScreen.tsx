@@ -38,7 +38,7 @@ export const RoadmapPreviewScreen = () => {
   }, [goalId]);
 
   const handleStart = () => {
-    navigation.reset({ index: 0, routes: [{ name: 'App' }] });
+    navigation.navigate('Today');
   };
 
   if (loading) {

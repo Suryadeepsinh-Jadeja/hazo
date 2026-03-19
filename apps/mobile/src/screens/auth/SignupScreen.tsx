@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator 
 import { useNavigation } from '@react-navigation/native';
 import { theme } from '../../constants/theme';
 import { signUpWithEmail } from '../../lib/supabase';
+import { toast } from '../../lib/toast';
 
 export const SignupScreen = () => {
   const navigation = useNavigation<any>();
@@ -20,9 +21,16 @@ export const SignupScreen = () => {
     setLoading(true);
     setError(null);
     try {
-      const { error } = await signUpWithEmail(email, password, name);
+      const { data, error } = await signUpWithEmail(email, password, name);
       if (error) throw error;
-      navigation.reset({ index: 0, routes: [{ name: 'App' }] });
+
+      if (data.session) {
+        toast.show('Account created successfully.', 'success');
+        return;
+      }
+
+      toast.show('Account created. Please check your email to verify, then log in.', 'success');
+      navigation.navigate('Login');
     } catch (err: any) {
       setError(err.message || 'Signup failed.');
     } finally {

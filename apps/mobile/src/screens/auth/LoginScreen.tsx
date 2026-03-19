@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator 
 import { useNavigation } from '@react-navigation/native';
 import { theme } from '../../constants/theme';
 import { signInWithEmail, signInWithGoogle } from '../../lib/supabase';
+import { toast } from '../../lib/toast';
 
 export const LoginScreen = () => {
   const navigation = useNavigation<any>();
@@ -21,7 +22,7 @@ export const LoginScreen = () => {
     try {
       const { error } = await signInWithEmail(email, password);
       if (error) throw error;
-      navigation.reset({ index: 0, routes: [{ name: 'App' }] });
+      toast.show('Logged in successfully.', 'success');
     } catch (err: any) {
       setError(err.message || 'Login failed.');
     } finally {
@@ -35,7 +36,7 @@ export const LoginScreen = () => {
     try {
       const { error } = await signInWithGoogle();
       if (error) throw error;
-      navigation.reset({ index: 0, routes: [{ name: 'App' }] });
+      toast.show('Google sign-in started.', 'info');
     } catch (err: any) {
       setError(err.message || 'Google login failed.');
     } finally {
