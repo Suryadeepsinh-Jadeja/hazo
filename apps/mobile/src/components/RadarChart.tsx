@@ -34,8 +34,8 @@ export const RadarChart = ({ skills, size }: RadarChartProps) => {
 
   const angleStep = (Math.PI * 2) / skills.length;
 
+  // Regular JS helper – used ONLY outside of worklets (grid lines, axes, labels)
   const getPoint = (level: number, i: number, prg: number = 1) => {
-    // Start from top (-Math.PI/2)
     const angle = i * angleStep - Math.PI / 2;
     const currentLevel = level * prg;
     const r = (currentLevel / 100) * radius;
@@ -45,21 +45,38 @@ export const RadarChart = ({ skills, size }: RadarChartProps) => {
     };
   };
 
+  // ── Animated polygon (worklet-safe) ──────────────────────────────────
+  const skillLevels = skills.map(s => s.masteryLevel);
+  const numSkills = skills.length;
+
   const animatedPolygonProps = useAnimatedProps(() => {
-    const pointsString = skills.map((s, i) => {
-       const p = getPoint(s.masteryLevel, i, progress.value);
-       return `${p.x},${p.y}`;
-    }).join(' ');
-    return { points: pointsString };
+    'worklet';
+    const parts: string[] = [];
+    for (let i = 0; i < numSkills; i++) {
+      const angle = i * angleStep - Math.PI / 2;
+      const r = ((skillLevels[i] * progress.value) / 100) * radius;
+      parts.push(`${center + r * Math.cos(angle)},${center + r * Math.sin(angle)}`);
+    }
+    return { points: parts.join(' ') };
   });
 
-  // Calculate grid points generically
+  // Calculate grid points generically (runs on JS thread — no problem)
   const getGridPolygon = (percent: number) => {
      return skills.map((_, i) => {
         const p = getPoint(percent, i, 1);
         return `${p.x},${p.y}`;
      }).join(' ');
   };
+
+  // Pre-build animated props for each dot (worklet-safe)
+  const dotAnimProps = skills.map((s, i) => {
+    return useAnimatedProps(() => {
+      'worklet';
+      const angle = i * angleStep - Math.PI / 2;
+      const r = ((s.masteryLevel * progress.value) / 100) * radius;
+      return { cx: center + r * Math.cos(angle), cy: center + r * Math.sin(angle) };
+    });
+  });
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -70,15 +87,15 @@ export const RadarChart = ({ skills, size }: RadarChartProps) => {
               key={pct} 
               points={getGridPolygon(pct)} 
               fill="none" 
-              stroke={theme.colors.neutral.border} // creampaper #E4DFD6 equivalent
+              stroke={theme.colors.neutral.border}
               strokeWidth={1} 
             />
          ))}
 
-         {/* Axes and Lables */}
+         {/* Axes and Labels */}
          {skills.map((s, i) => {
             const endP = getPoint(100, i, 1);
-            const labelP = getPoint(135, i, 1); // pushing label out further
+            const labelP = getPoint(135, i, 1);
             return (
               <React.Fragment key={i}>
                  <Line x1={center} y1={center} x2={endP.x} y2={endP.y} stroke={theme.colors.neutral.border} strokeWidth={1} />
@@ -107,24 +124,16 @@ export const RadarChart = ({ skills, size }: RadarChartProps) => {
          />
 
          {/* Animated Data Dots */}
-         {skills.map((s, i) => {
-            const AnimatedPoint = () => {
-              const animProps = useAnimatedProps(() => {
-                 const p = getPoint(s.masteryLevel, i, progress.value);
-                 return { cx: p.x, cy: p.y };
-              });
-              return (
-                <AnimatedCircle 
-                  animatedProps={animProps} 
-                  r={5} 
-                  fill={theme.colors.accent.coral} 
-                  stroke={theme.colors.neutral.white} 
-                  strokeWidth={1.5} 
-                />
-              );
-            };
-            return <AnimatedPoint key={`dot-${i}`} />;
-         })}
+         {skills.map((_, i) => (
+           <AnimatedCircle
+             key={`dot-${i}`}
+             animatedProps={dotAnimProps[i]}
+             r={5}
+             fill={theme.colors.accent.coral}
+             stroke={theme.colors.neutral.white}
+             strokeWidth={1.5}
+           />
+         ))}
        </Svg>
     </View>
   );

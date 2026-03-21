@@ -7,19 +7,28 @@ import api from './api';
  */
 export async function registerForPushNotifications() {
   try {
+    // Request local notification permission first
     const notifeeAuth = await notifee.requestPermission();
-    const messagingAuth = await messaging().requestPermission();
 
-    const enabled =
-      messagingAuth === messaging.AuthorizationStatus.AUTHORIZED ||
-      messagingAuth === messaging.AuthorizationStatus.PROVISIONAL ||
-      notifeeAuth.authorizationStatus === AuthorizationStatus.AUTHORIZED;
+    // Guard: Firebase may not be initialized in dev/emulator
+    let token: string | null = null;
+    try {
+      const messagingAuth = await messaging().requestPermission();
+      const enabled =
+        messagingAuth === messaging.AuthorizationStatus.AUTHORIZED ||
+        messagingAuth === messaging.AuthorizationStatus.PROVISIONAL ||
+        notifeeAuth.authorizationStatus === AuthorizationStatus.AUTHORIZED;
 
-    if (enabled) {
-      const token = await messaging().getToken();
-      if (token) {
-        await api.put('/api/v1/users/me/preferences', { push_token: token });
+      if (enabled) {
+        token = await messaging().getToken();
       }
+    } catch (firebaseErr) {
+      // Firebase not configured — fall back to local-only notifications
+      console.info('Firebase not available, using local notifications only.');
+    }
+
+    if (token) {
+      await api.put('/api/v1/users/me/preferences', { push_token: token });
     }
   } catch (error) {
     console.warn('Failed to register or sync push preferences', error);

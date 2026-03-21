@@ -102,7 +102,7 @@ export const ProfileScreen = () => {
         value: reminderTime,
         mode: 'time',
         is24Hour: false,
-        onChange: handleTimeChange,
+        onValueChange: handleTimeChange,
       });
       return;
     }
