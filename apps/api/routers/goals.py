@@ -463,9 +463,9 @@ async def _generate_roadmap_background(
             topic["resources"] = verified
             return topic
 
-        # Process only the first 5 topics to avoid exhausting free-tier Gemini limits on 40+ topics.
-        # Future topics can be curated via JIT or background crons.
-        topics_to_curate = all_topics[:5]
+        # Process only the first topic (Day 0) to avoid exhausting free-tier Gemini limits.
+        # Future topics will be curated daily via a nightly background cron scheduler.
+        topics_to_curate = all_topics[:1]
         BATCH_SIZE = 5
         for i in range(0, len(topics_to_curate), BATCH_SIZE):
             batch = topics_to_curate[i : i + BATCH_SIZE]
