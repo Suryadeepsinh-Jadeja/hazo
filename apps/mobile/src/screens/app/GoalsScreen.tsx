@@ -12,6 +12,7 @@ export const GoalsScreen = () => {
 
   const { data: goals, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['goals'],
+    staleTime: 5 * 60 * 1000, // 5 minutes
     queryFn: async () => {
       const res = await api.get('/api/v1/goals');
       return res.data;

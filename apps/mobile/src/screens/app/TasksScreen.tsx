@@ -20,6 +20,7 @@ export const TasksScreen = () => {
 
   const { data: tasks, isLoading, refetch } = useQuery({
     queryKey: ['tasks', activeFilter],
+    staleTime: 2 * 60 * 1000, // 2 minutes
     queryFn: async () => {
       const res = await api.get(`/api/v1/tasks?filter=${activeFilter.toLowerCase()}`);
       return res.data;

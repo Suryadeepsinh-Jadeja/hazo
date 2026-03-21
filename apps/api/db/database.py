@@ -8,7 +8,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-client = AsyncIOMotorClient(MONGODB_URI)
+client = AsyncIOMotorClient(
+    MONGODB_URI,
+    maxPoolSize=10,
+    minPoolSize=1,
+    serverSelectionTimeoutMS=5000,
+    connectTimeoutMS=5000,
+    retryWrites=True,
+)
 db = client.stride
 
 def get_database():
@@ -47,8 +54,15 @@ async def create_indexes_safely(collection, indexes, collection_name: str):
         raise
 
 async def init_indexes():
-    """Create all necessary indexes in MongoDB."""
+    """Create all necessary indexes and warm up the connection pool."""
     logging.info("Initializing database indexes...")
+
+    # Warm up the connection pool eagerly so the first user request is fast
+    try:
+        await client.admin.command('ping')
+        logging.info("MongoDB connection pool warmed up.")
+    except Exception as exc:
+        logging.warning("MongoDB warmup ping failed: %s", exc)
     
     users_col = get_users_col()
     await create_indexes_safely(users_col, [
