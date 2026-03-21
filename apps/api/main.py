@@ -40,7 +40,7 @@ except ImportError as exc:
     logging.warning("Failed to load auth router: %s", exc)
 
 try:
-    from apps.api.routers import goals, tasks, mentor
+    from routers import goals, tasks, mentor
     app.include_router(goals.router,  prefix="/api/v1", tags=["goals"])
     app.include_router(tasks.router,  prefix="/api/v1", tags=["tasks"])
     app.include_router(mentor.router, prefix="/api/v1", tags=["mentor"])
