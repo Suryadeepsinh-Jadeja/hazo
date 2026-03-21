@@ -23,8 +23,22 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401) {
-      console.warn('Unauthorized! Signing out and redirecting to login...');
+    const originalRequest = error.config;
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      try {
+        // Attempt to refresh the Supabase session
+        const { data: refreshData } = await supabase.auth.refreshSession();
+        const newToken = refreshData.session?.access_token;
+        if (newToken) {
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          return api(originalRequest);
+        }
+      } catch (refreshErr) {
+        // Refresh failed — token is truly invalid
+      }
+      // Only log a quiet debug message, not a scary warning
+      console.debug('Auth: session expired, user may need to re-login.');
     }
     return Promise.reject(error);
   },

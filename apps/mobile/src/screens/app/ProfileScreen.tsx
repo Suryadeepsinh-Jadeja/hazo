@@ -28,12 +28,8 @@ export const ProfileScreen = () => {
   const { data: stats } = useQuery({
     queryKey: ['userStats'],
     queryFn: async () => {
-      try {
-        const res = await api.get('/api/v1/users/me/stats');
-        return res.data;
-      } catch {
-        return { streak_count: user?.streak_count || 0, total_topics_done: 42, active_goals_count: 2 };
-      }
+      const res = await api.get('/api/v1/users/me/stats');
+      return res.data;
     }
   });
 
