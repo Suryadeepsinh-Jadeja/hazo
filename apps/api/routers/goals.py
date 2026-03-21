@@ -245,12 +245,26 @@ _ROADMAP_XML_RE = re.compile(r"<roadmap>(.*?)</roadmap>", re.DOTALL)
 
 
 def _extract_roadmap_json(raw: str) -> dict:
-    """Pull the JSON out of <roadmap>…</roadmap> tags and parse it."""
+    """Pull the JSON out of <roadmap>…</roadmap> tags and parse it, with a fallback for raw JSON."""
     match = _ROADMAP_XML_RE.search(raw)
-    if not match:
-        raise ValueError("Gemini response did not contain <roadmap> tags.")
-    text = match.group(1).strip()
-    return json.loads(text)
+    if match:
+        text = match.group(1).strip()
+    else:
+        # Fallback: model ignored XML tags and returned JSON (possibly in markdown)
+        text = raw.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        elif text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+        
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse roadmap JSON. Raw response length: {len(raw)}")
+        raise ValueError(f"Gemini response was not valid JSON: {str(e)}")
 
 
 def _get_questions_for_domain(domain: str) -> List[Dict[str, str]]:
