@@ -15,6 +15,7 @@ async def lifespan(app: FastAPI):
     await init_indexes()
     nightly.start()
     link_checker.start()
+    logging.getLogger("uvicorn.error").info("Scheduler started")
     yield
     nightly.shutdown(wait=False)
     link_checker.shutdown(wait=False)
