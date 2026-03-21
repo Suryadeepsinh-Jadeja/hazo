@@ -7,24 +7,14 @@ import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 import { GoalCard } from '../../components/GoalCard';
 
-const MOCK_GOALS = [
-  { _id: '1', title: 'Learn Modern React Native', current_phase: 'UI Interactions', current_day: 14, total_days: 90, status: 'active', streak: 4 },
-  { _id: '2', title: 'Python Backend Mastery', current_phase: 'SQLAlchemy ORM', current_day: 40, total_days: 120, status: 'paused', streak: 0 },
-  { _id: '3', title: 'Score 8 Bands in IELTS', current_phase: 'Speaking Exams', current_day: 30, total_days: 30, status: 'completed', streak: 12 },
-];
-
 export const GoalsScreen = () => {
   const navigation = useNavigation<any>();
 
   const { data: goals, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['goals'],
     queryFn: async () => {
-      try {
-        const res = await api.get('/api/v1/goals');
-        return res.data;
-      } catch {
-        return MOCK_GOALS;
-      }
+      const res = await api.get('/api/v1/goals');
+      return res.data;
     }
   });
 

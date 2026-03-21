@@ -4,16 +4,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 
-const MOCK_ROADMAP = {
-  total_topics: 12,
-  total_phases: 3,
-  total_days: 90,
-  phases: [
-    { title: "Foundations", duration_days: 14, topics: ["Basics of Syntax", "Data Structures", "Simple Algorithms"] },
-    { title: "Core Concepts", duration_days: 30, topics: ["System Design", "Advanced Patterns", "Database Indexing"] },
-    { title: "Mastery & Practice", duration_days: 46, topics: ["Mock Interviews", "Whiteboard Practice", "Review"] }
-  ]
-};
+
 
 export const RoadmapPreviewScreen = () => {
   const navigation = useNavigation<any>();
@@ -29,7 +20,7 @@ export const RoadmapPreviewScreen = () => {
         const res = await api.get(`/api/v1/goals/${goalId}`);
         setRoadmap(res.data);
       } catch (err) {
-        setRoadmap(MOCK_ROADMAP); // Fallback on error natively handled
+        console.warn('Failed to fetch roadmap:', err);
       } finally {
         setLoading(false);
       }
@@ -54,7 +45,7 @@ export const RoadmapPreviewScreen = () => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Text style={styles.title}>Your Roadmap is Ready</Text>
         <Text style={styles.subtitle}>
-          {roadmap.total_topics || MOCK_ROADMAP.total_topics} topics · {roadmap.total_phases || MOCK_ROADMAP.total_phases} phases · {roadmap.total_days || MOCK_ROADMAP.total_days} days
+          {roadmap.total_topics || '—'} topics · {roadmap.total_phases || roadmap.phases?.length || '—'} phases · {roadmap.total_days || '—'} days
         </Text>
 
         <View style={styles.timeline}>

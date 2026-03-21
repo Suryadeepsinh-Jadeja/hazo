@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Animated as RNAnimated, Easing } from 'react-native';
+import { View, StyleSheet, Animated as RNAnimated, Easing, Alert } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Circle } from 'react-native-svg';
 import Animated, { FadeIn, FadeOut, Layout } from 'react-native-reanimated';
@@ -36,17 +36,25 @@ export const GeneratingScreen = () => {
       setMsgIndex((prev) => (prev < MESSAGES.length - 1 ? prev + 1 : prev));
     }, 2500);
 
+    let pollCount = 0;
     const pollInterval = setInterval(async () => {
+      pollCount++;
       try {
-        const res = await api.get(`/api/v1/goals/onboard/status?sessionId=${sessionId}`);
-        if (res.data?.status === 'complete') {
+        const res = await api.get(`/api/v1/goals/onboard/status/${sessionId}`);
+        if (res.data?.status === 'complete' && res.data?.goal_id) {
           clearInterval(pollInterval);
-          navigation.navigate('RoadmapPreview', { goalId: res.data.goalId || 'mock-id' });
+          navigation.navigate('RoadmapPreview', { goalId: res.data.goal_id });
+        } else if (res.data?.status === 'error') {
+          clearInterval(pollInterval);
+          Alert.alert('Error', res.data.error || 'Roadmap generation failed. Please try again.');
+          navigation.goBack();
         }
       } catch {
-        if (msgIndex >= 3) {
+        // After ~60 seconds of polling (24 tries × 2.5s), give up
+        if (pollCount >= 24) {
           clearInterval(pollInterval);
-          navigation.navigate('RoadmapPreview', { goalId: 'mock-uuid-fallback' });
+          Alert.alert('Timeout', 'Roadmap generation is taking too long. Please try again.');
+          navigation.goBack();
         }
       }
     }, 2500);
@@ -55,7 +63,7 @@ export const GeneratingScreen = () => {
       clearInterval(msgInterval);
       clearInterval(pollInterval);
     };
-  }, [msgIndex]);
+  }, []);
 
   const spin = rotateValue.interpolate({
     inputRange: [0, 1],

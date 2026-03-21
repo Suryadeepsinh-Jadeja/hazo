@@ -19,7 +19,7 @@ const DEFAULT_QUESTIONS = [
 export const QuestionsScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { sessionId } = route.params || {};
+  const { sessionId, questions: backendQuestions } = route.params || {};
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentQIndex, setCurrentQIndex] = useState(0);
@@ -45,16 +45,26 @@ export const QuestionsScreen = () => {
 
     setTimeout(async () => {
       let qText = '';
+      // Use backend questions if available, else fall back to defaults
+      const questionList = backendQuestions?.length >= 5
+        ? backendQuestions.map((q: any) => typeof q === 'string' ? q : q.label || q.question)
+        : DEFAULT_QUESTIONS;
+
       if (currentQIndex < 5) {
-        qText = DEFAULT_QUESTIONS[currentQIndex];
+        qText = questionList[currentQIndex] || DEFAULT_QUESTIONS[currentQIndex];
         
         if (currentQIndex === 2) setInputType('numeric');
         else if (currentQIndex === 3) setInputType('budget');
         else setInputType('text');
       } else {
-        // Fetch custom AI Question 6
+        // Fetch custom AI Question 6 via POST
         try {
-          const res = await api.get(`/api/v1/goals/onboard/q6?sessionId=${sessionId}`);
+          const answers: Record<string, string> = {};
+          const userMsgs = messages.filter(m => m.isUser);
+          userMsgs.forEach((m, idx) => {
+            answers[`q${idx + 1}`] = m.text;
+          });
+          const res = await api.post('/api/v1/goals/onboard/q6', { session_id: sessionId, answers });
           qText = res.data.question || "Lastly, what do you feel is your biggest obstacle right now?";
         } catch {
           qText = "Lastly, what do you feel is your biggest obstacle right now?";
@@ -82,9 +92,16 @@ export const QuestionsScreen = () => {
 
   const finalizeOnboarding = async () => {
     try {
-      await api.post('/api/v1/goals/onboard/complete', { sessionId, answers: messages.filter(m => m.isUser).map(m => m.text) });
-    } catch {
-      console.warn('API error saving answers, proceeding with mock data');
+      // Build all_answers dict keyed by question field names
+      const userAnswers = messages.filter(m => m.isUser).map(m => m.text);
+      const allAnswers: Record<string, string> = {};
+      userAnswers.forEach((a, idx) => {
+        allAnswers[`q${idx + 1}`] = a;
+      });
+      await api.post('/api/v1/goals/onboard/complete', { session_id: sessionId, all_answers: allAnswers });
+    } catch (e) {
+      // Non-fatal: roadmap generation may still work
+      console.warn('Error submitting onboarding answers:', e);
     }
     navigation.navigate('Generating', { sessionId });
   };

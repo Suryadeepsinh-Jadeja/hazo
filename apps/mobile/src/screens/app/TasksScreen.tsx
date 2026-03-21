@@ -12,12 +12,6 @@ import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 
 const FILTERS = ['All', 'Today', 'Overdue', 'Done'];
 
-const MOCK_TASKS = [
-  { _id: '1', raw_input: 'Read advanced routing patterns', priority: 'high', status: 'pending', due_date: 'Today', ai_subtasks: [{}, {}] },
-  { _id: '2', raw_input: 'Update goal intake', priority: 'medium', status: 'pending', due_date: 'Tomorrow', ai_subtasks: [{}, {}, {}] },
-  { _id: '3', raw_input: 'Review PRs', priority: 'low', status: 'done', due_date: 'Yesterday', ai_subtasks: [{}] },
-];
-
 export const TasksScreen = () => {
   const navigation = useNavigation<any>();
   const queryClient = useQueryClient();
@@ -27,12 +21,8 @@ export const TasksScreen = () => {
   const { data: tasks, isLoading, refetch } = useQuery({
     queryKey: ['tasks', activeFilter],
     queryFn: async () => {
-      try {
-        const res = await api.get(`/api/v1/tasks?filter=${activeFilter.toLowerCase()}`);
-        return res.data;
-      } catch {
-        return MOCK_TASKS;
-      }
+      const res = await api.get(`/api/v1/tasks?filter=${activeFilter.toLowerCase()}`);
+      return res.data;
     }
   });
 

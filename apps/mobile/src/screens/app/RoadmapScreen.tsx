@@ -7,35 +7,6 @@ import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 import { TopicRow } from '../../components/TopicRow';
 
-const MOCK_ROADMAP = {
-  _id: 'goal-1',
-  title: 'Learn Modern React Native',
-  mentor_visited_today: false,
-  phases: [
-    {
-      _id: 'phase-1', title: 'Foundations', is_done: true,
-      topics: [
-        { _id: 't1', title: 'React Hooks Deep Dive', estimated_minutes: 45, status: 'done', is_today: false, is_locked: false },
-        { _id: 't2', title: 'Component Lifecycle', estimated_minutes: 30, status: 'done', is_today: false, is_locked: false }
-      ]
-    },
-    {
-      _id: 'phase-2', title: 'UI Interactions', is_done: false,
-      topics: [
-        { _id: 't3', title: 'Reanimated Shared Values', estimated_minutes: 60, status: 'pending', is_today: true, is_locked: false },
-        { _id: 't4', title: 'Gesture Handler Basics', estimated_minutes: 90, status: 'pending', is_today: false, is_locked: true }
-      ]
-    },
-    {
-      _id: 'phase-3', title: 'State & Queries', is_done: false,
-      topics: [
-        { _id: 't5', title: 'Zustand Patterns', estimated_minutes: 40, status: 'pending', is_today: false, is_locked: true },
-        { _id: 't6', title: 'TanStack Query Mutations', estimated_minutes: 60, status: 'pending', is_today: false, is_locked: true }
-      ]
-    }
-  ]
-};
-
 export const RoadmapScreen = () => {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
@@ -53,18 +24,20 @@ export const RoadmapScreen = () => {
 
   const fetchRoadmap = async () => {
     try {
-      const res = await api.get(`/api/v1/goals/${goalId}/roadmap`);
+      const res = await api.get(`/api/v1/goals/${goalId}`);
       setRoadmap(res.data);
       // Auto-expand the active phase, collapse others
       const collapseMap: Record<string, boolean> = {};
-      res.data.phases.forEach((p: any) => {
-         const hasToday = p.topics.some((t: any) => t.is_today);
-         collapseMap[p._id] = !hasToday;
+      const phases = res.data.phases || [];
+      phases.forEach((p: any, idx: number) => {
+         const hasActiveTopics = p.topics?.some((t: any) => 
+           t.status === 'in_progress' || t.status === 'pending'
+         );
+         collapseMap[p.phase_id || `p-${idx}`] = !hasActiveTopics;
       });
       setCollapsedPhases(collapseMap);
-    } catch {
-      setRoadmap(MOCK_ROADMAP);
-      setCollapsedPhases({ 'phase-1': true, 'phase-2': false, 'phase-3': true });
+    } catch (err) {
+      console.warn('Failed to fetch roadmap:', err);
     } finally {
       setLoading(false);
     }

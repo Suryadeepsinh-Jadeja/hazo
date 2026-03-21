@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
@@ -28,14 +28,12 @@ export const GoalInputScreen = () => {
     if (goalText.length < 10) return;
     setLoading(true);
     try {
-      let sessionId = 'mock-session-id';
-      try {
-        const res = await api.post('/api/v1/goals/onboard/start', { goal: goalText });
-        sessionId = res.data.sessionId;
-      } catch (e) {
-        console.warn('API error, falling back to mock session ID');
-      }
-      navigation.navigate('Questions', { sessionId, goalText });
+      const res = await api.post('/api/v1/goals/onboard/start', { goal_text: goalText });
+      const { session_id, domain, questions } = res.data;
+      navigation.navigate('Questions', { sessionId: session_id, goalText, domain, questions });
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || 'Could not reach the server';
+      Alert.alert('Error', msg);
     } finally {
       setLoading(false);
     }
