@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
 import { theme } from '../constants/theme';
 import api from '../lib/api';
@@ -35,19 +35,41 @@ export const AddTaskModal = ({ visible, onClose, onSuccess }: AddTaskModalProps)
     });
   };
 
+  const getDueDateISO = (label: string): string | undefined => {
+    const now = new Date();
+    if (label === 'Today') {
+      now.setHours(23, 59, 59, 0);
+      return now.toISOString();
+    }
+    if (label === 'Tomorrow') {
+      now.setDate(now.getDate() + 1);
+      now.setHours(23, 59, 59, 0);
+      return now.toISOString();
+    }
+    if (label === 'This week') {
+      const daysUntilSunday = 7 - now.getDay();
+      now.setDate(now.getDate() + (daysUntilSunday || 7));
+      now.setHours(23, 59, 59, 0);
+      return now.toISOString();
+    }
+    return undefined; // Custom — no date
+  };
+
   const handleSubmit = async () => {
      if (!taskText.trim()) return;
      setLoading(true);
      try {
-       await api.post('/api/v1/tasks', { raw_input: taskText, due_date: dueDate, priority: priority.toLowerCase() });
+       await api.post('/api/v1/tasks', {
+         raw_input: taskText,
+         due_date: getDueDateISO(dueDate),
+         priority: priority.toLowerCase(),
+       });
        onSuccess();
        handleClose();
        resetForm();
-     } catch {
-       console.warn('Fallback: simulated task creation');
-       onSuccess();
-       handleClose();
-       resetForm();
+     } catch (e: any) {
+       const msg = e?.response?.data?.detail || e?.message || 'Could not create task';
+       Alert.alert('Error', msg);
      } finally {
        setLoading(false);
      }
