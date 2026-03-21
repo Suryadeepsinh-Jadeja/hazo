@@ -7,7 +7,14 @@ const api = axios.create({
 });
 
 api.interceptors.request.use(async (config) => {
-  // Logic to attach Supabase JWT as Bearer token will be implemented here
+  const { data } = await supabase.auth.getSession();
+  const accessToken = data.session?.access_token;
+
+  if (accessToken) {
+    config.headers = config.headers ?? {};
+    config.headers.Authorization = `Bearer ${accessToken}`;
+  }
+
   return config;
 });
 

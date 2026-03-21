@@ -22,6 +22,7 @@
           <set>
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/app" />
+            <option value="$PROJECT_DIR$/../node_modules/react-native-screens/android" />
             <option value="$PROJECT_DIR$/../../../node_modules/@notifee/react-native/android" />
             <option value="$PROJECT_DIR$/../../../node_modules/@react-native-async-storage/async-storage/android" />
             <option value="$PROJECT_DIR$/../../../node_modules/@react-native-community/netinfo/android" />
@@ -30,13 +31,13 @@
             <option value="$PROJECT_DIR$/../../../node_modules/@react-native/gradle-plugin" />
             <option value="$PROJECT_DIR$/../../../node_modules/@sentry/react-native/android" />
             <option value="$PROJECT_DIR$/../../../node_modules/@shopify/flash-list/android" />
+            <option value="$PROJECT_DIR$/../../../node_modules/react-native-config/android" />
             <option value="$PROJECT_DIR$/../../../node_modules/react-native-gesture-handler/android" />
             <option value="$PROJECT_DIR$/../../../node_modules/react-native-haptic-feedback/android" />
             <option value="$PROJECT_DIR$/../../../node_modules/react-native-keychain/android" />
             <option value="$PROJECT_DIR$/../../../node_modules/react-native-linear-gradient/android" />
             <option value="$PROJECT_DIR$/../../../node_modules/react-native-reanimated/android" />
             <option value="$PROJECT_DIR$/../../../node_modules/react-native-safe-area-context/android" />
-            <option value="$PROJECT_DIR$/../../../node_modules/react-native-screens/android" />
             <option value="$PROJECT_DIR$/../../../node_modules/react-native-svg/android" />
           </set>
         </option>

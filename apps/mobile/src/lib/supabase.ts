@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = Config.SUPABASE_URL || '';
 const supabaseAnonKey = Config.SUPABASE_ANON_KEY || '';
+const appRedirectUrl = 'stride://auth';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -26,6 +27,7 @@ export const signUpWithEmail = async (email: string, password: string, name: str
     password,
     options: {
       data: { name },
+      emailRedirectTo: appRedirectUrl,
     },
   });
 };
@@ -34,7 +36,7 @@ export const signInWithGoogle = async () => {
   return await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: 'stride://auth',
+      redirectTo: appRedirectUrl,
     },
   });
 };

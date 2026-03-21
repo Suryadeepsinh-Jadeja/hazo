@@ -40,8 +40,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         name: sbUser.user_metadata?.name || 'User',
       });
       get().setUser(data);
-    } catch (error) {
-      console.warn('Failed to sync user with backend:', error);
+    } catch (error: any) {
+      // Keep the app usable even when the backend sync endpoint is not implemented locally.
+      get().setUser({
+        id: sbUser.id,
+        supabase_id: sbUser.id,
+        email: sbUser.email,
+        name: sbUser.user_metadata?.name || 'User',
+        streak_count: 0,
+        plan: 'free',
+      });
+
+      const status = error?.response?.status;
+      const isNetworkError = !error?.response;
+
+      if (!isNetworkError && status !== 404) {
+        console.warn('Failed to sync user with backend:', error);
+      }
     }
   },
 

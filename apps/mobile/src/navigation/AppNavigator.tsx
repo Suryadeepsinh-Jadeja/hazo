@@ -1,25 +1,28 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Home, CheckCircle, Target, User } from 'lucide-react-native';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { theme } from '../constants/theme';
-
-const PlaceholderScreen = ({ title }: { title: string }) => (
-  <View style={styles.placeholderContainer}>
-    <Text style={styles.placeholderText}>{title}</Text>
-  </View>
-);
-const TodayScreen = () => <PlaceholderScreen title="Today" />;
-const TasksScreen = () => <PlaceholderScreen title="Tasks" />;
-const GoalsScreen = () => <PlaceholderScreen title="Goals" />;
-const ProfileScreen = () => <PlaceholderScreen title="Profile" />;
+import { TodayScreen } from '../screens/app/TodayScreen';
+import { TasksScreen } from '../screens/app/TasksScreen';
+import { GoalsScreen } from '../screens/app/GoalsScreen';
+import { ProfileScreen } from '../screens/app/ProfileScreen';
+import { RoadmapScreen } from '../screens/app/RoadmapScreen';
+import { TaskDetailScreen } from '../screens/app/TaskDetailScreen';
+import { MentorScreen } from '../screens/app/MentorScreen';
+import { SkillsScreen } from '../screens/app/SkillsScreen';
+import { RoomFeedScreen } from '../screens/app/RoomFeedScreen';
+import { CommunityScreen } from '../screens/app/CommunityScreen';
+import { OnboardingStack } from './OnboardingStack';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
-export const AppNavigator = () => {
+const MainTabs = () => {
   const insets = useSafeAreaInsets();
 
   return (
@@ -107,18 +110,23 @@ export const AppNavigator = () => {
   );
 };
 
+export const AppNavigator = () => {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Tabs" component={MainTabs} />
+      <Stack.Screen name="OnboardingStack" component={OnboardingStack} />
+      <Stack.Screen name="RoadmapScreen" component={RoadmapScreen} />
+      <Stack.Screen name="TaskDetailScreen" component={TaskDetailScreen} />
+      <Stack.Screen name="Mentor" component={MentorScreen} />
+      <Stack.Screen name="MentorScreen" component={MentorScreen} />
+      <Stack.Screen name="SkillsScreen" component={SkillsScreen} />
+      <Stack.Screen name="RoomFeedScreen" component={RoomFeedScreen} />
+      <Stack.Screen name="Community" component={CommunityScreen} />
+    </Stack.Navigator>
+  );
+};
+
 const styles = StyleSheet.create({
-  placeholderContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: theme.colors.neutral.cream,
-  },
-  placeholderText: {
-    fontFamily: theme.typography.fontDisplay,
-    fontSize: theme.typography.fontSizes.xl,
-    color: theme.colors.primary.ink,
-  },
   iconContainer: {
     alignItems: 'center',
     justifyContent: 'center',

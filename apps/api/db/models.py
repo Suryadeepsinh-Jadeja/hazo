@@ -1,7 +1,17 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Literal, Optional, Dict, Any
 from datetime import datetime
 import uuid
+
+class MongoDocumentModel(BaseModel):
+    id: Optional[str] = Field(alias="_id", default=None)
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def stringify_object_id(cls, value):
+        if value is None:
+            return value
+        return str(value)
 
 class TimeBlock(BaseModel):
     start: str = Field(description="HH:MM format", examples=["08:00"])
@@ -16,8 +26,7 @@ class WeeklyAvailability(BaseModel):
     saturday: List[TimeBlock] = Field(default_factory=list)
     sunday: List[TimeBlock] = Field(default_factory=list)
 
-class UserDB(BaseModel):
-    id: Optional[str] = Field(alias="_id", default=None)
+class UserDB(MongoDocumentModel):
     supabase_id: str
     email: str
     name: str
@@ -67,8 +76,7 @@ class GoalIntake(BaseModel):
     external_materials: Optional[str] = None
     domain_specific_answer: Optional[str] = None
 
-class GoalDB(BaseModel):
-    id: Optional[str] = Field(alias="_id", default=None)
+class GoalDB(MongoDocumentModel):
     user_id: str
     title: str
     domain: str
@@ -91,8 +99,7 @@ class SubtaskDB(BaseModel):
     status: Literal["pending", "done"] = "pending"
     completed_at: Optional[datetime] = None
 
-class TaskDB(BaseModel):
-    id: Optional[str] = Field(alias="_id", default=None)
+class TaskDB(MongoDocumentModel):
     user_id: str
     raw_input: str
     due_date: Optional[datetime] = None
@@ -103,8 +110,7 @@ class TaskDB(BaseModel):
     status: Literal["pending", "done", "overdue"] = "pending"
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-class SkillDB(BaseModel):
-    id: Optional[str] = Field(alias="_id", default=None)
+class SkillDB(MongoDocumentModel):
     user_id: str
     goal_id: str
     name: str
@@ -116,8 +122,7 @@ class SkillDB(BaseModel):
     last_practiced: Optional[datetime] = None
     decay_rate: float = 0.5
 
-class CommunityRoomDB(BaseModel):
-    id: Optional[str] = Field(alias="_id", default=None)
+class CommunityRoomDB(MongoDocumentModel):
     name: str
     domain: str
     target_date: Optional[datetime] = None

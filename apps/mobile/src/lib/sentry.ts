@@ -11,7 +11,7 @@ export const initSentry = () => {
   Sentry.init({
     dsn,
     tracesSampleRate: 0.2, // capture 20% of transactions for performance
-    debug: __DEV__,
+    debug: false,
   });
 };
 
