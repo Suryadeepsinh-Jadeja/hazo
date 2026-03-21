@@ -34,7 +34,7 @@ from packages.ai.prompts import mentor_system_prompt
 
 load_dotenv()
 logger = logging.getLogger("stride.routers.mentor")
-router = APIRouter()
+router = APIRouter(prefix="/mentor")
 
 # ---------------------------------------------------------------------------
 # Redis client (reuse pattern from goals.py)

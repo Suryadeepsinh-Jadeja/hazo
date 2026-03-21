@@ -51,7 +51,7 @@ from packages.ai.prompts import (
 
 load_dotenv()
 logger = logging.getLogger("stride.routers.goals")
-router = APIRouter()
+router = APIRouter(prefix="/goals")
 
 # ---------------------------------------------------------------------------
 # Redis client (lazy singleton)

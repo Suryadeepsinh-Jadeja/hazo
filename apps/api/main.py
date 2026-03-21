@@ -40,22 +40,12 @@ except ImportError as exc:
     logging.warning("Failed to load auth router: %s", exc)
 
 try:
-    from routers import goals
-    include_legacy_and_v1(goals, "/goals")
+    from apps.api.routers import goals, tasks, mentor
+    app.include_router(goals.router,  prefix="/api/v1", tags=["goals"])
+    app.include_router(tasks.router,  prefix="/api/v1", tags=["tasks"])
+    app.include_router(mentor.router, prefix="/api/v1", tags=["mentor"])
 except ImportError as exc:
-    logging.warning("Failed to load goals router: %s", exc)
-
-try:
-    from routers import tasks
-    include_legacy_and_v1(tasks, "/tasks")
-except ImportError as exc:
-    logging.warning("Failed to load tasks router: %s", exc)
-
-try:
-    from routers import mentor
-    include_legacy_and_v1(mentor, "/mentor")
-except ImportError as exc:
-    logging.warning("Failed to load mentor router: %s", exc)
+    logging.warning("Failed to load core routers: %s", exc)
 
 try:
     from routers import skills

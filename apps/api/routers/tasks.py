@@ -35,7 +35,7 @@ from packages.ai.prompts import subtask_generation_prompt
 
 load_dotenv()
 logger = logging.getLogger("stride.routers.tasks")
-router = APIRouter()
+router = APIRouter(prefix="/tasks")
 
 
 # ---------------------------------------------------------------------------
