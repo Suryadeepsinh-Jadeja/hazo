@@ -250,20 +250,18 @@ def _extract_roadmap_json(raw: str) -> dict:
     if match:
         text = match.group(1).strip()
     else:
-        # Fallback: model ignored XML tags and returned JSON (possibly in markdown)
+        # Fallback: model ignored XML tags and returned JSON. It might have conversational
+        # filler before or after it, so we locate the outermost braces.
         text = raw.strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        elif text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            text = text[start:end+1]
         
     try:
         return json.loads(text)
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse roadmap JSON. Raw response length: {len(raw)}")
+        logger.error(f"Failed to parse roadmap JSON. Raw response length: {len(raw[:500])}...")
         raise ValueError(f"Gemini response was not valid JSON: {str(e)}")
 
 
