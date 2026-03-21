@@ -15,11 +15,16 @@ from typing import AsyncGenerator
 import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted
 
+from dotenv import load_dotenv
+
 # ---------------------------------------------------------------------------
 # Configuration — runs once on import
 # ---------------------------------------------------------------------------
 
-_API_KEY = os.environ.get("GOOGLE_GEMINI_API_KEY", "AIzaSyAApUXUeywPQUzm3UzAnxs9oDZTQDS1ZGk")
+# Load from .env if present (e.g. apps/api/.env or current working directory)
+load_dotenv()
+
+_API_KEY = os.environ.get("GOOGLE_GEMINI_API_KEY", "")
 if not _API_KEY:
     raise EnvironmentError(
         "GOOGLE_GEMINI_API_KEY is not set. "
