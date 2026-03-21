@@ -418,7 +418,7 @@ async def _generate_roadmap_background(
             "domain_specific_answer": all_answers.get("domainSpecificAnswer", ""),
         }
 
-        raw_roadmap = await call_gemini(roadmap_generation_prompt(profile), max_tokens=8192)
+        raw_roadmap = await call_gemini(roadmap_generation_prompt(profile), max_tokens=65536)
         roadmap_data = _extract_roadmap_json(raw_roadmap)
 
         # ── c. Resource curation + URL verification ────────────────────────

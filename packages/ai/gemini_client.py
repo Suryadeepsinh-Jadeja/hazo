@@ -40,7 +40,7 @@ MODEL_NAME = "gemini-flash-latest"
 
 def get_model(
     temperature: float = 0.3,
-    max_tokens: int = 4096,
+    max_tokens: int = 8192,
 ) -> genai.GenerativeModel:
     """Return a configured ``GenerativeModel`` instance.
 
@@ -72,7 +72,7 @@ _BASE_BACKOFF_SECONDS = 2.0
 async def call_gemini(
     prompt: str,
     temperature: float = 0.3,
-    max_tokens: int = 4096,
+    max_tokens: int = 8192,
 ) -> str:
     """Send *prompt* to Gemini and return the text response.
 
