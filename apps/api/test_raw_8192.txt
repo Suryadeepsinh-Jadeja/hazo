@@ -1,0 +1,30 @@
+<roadmap>
+  {
+    "phases": [
+      {
+        "phase_id": "phase_1",
+        "title": "Programming Fundamentals & Basic Data Structures",
+        "duration_days": 7,
+        "topics": [
+          {
+            "topic_id": "t1_1",
+            "title": "C/C++ Introduction & Basics (Variables, Data Types, Operators)",
+            "estimated_minutes": 180,
+            "ai_note": "Starting with C/C++ fundamentals as it's the language of choice for GATE CSE problem-solving and forms the basis for understanding data structures and algorithms.",
+            "resource_queries": [
+              "GeeksforGeeks C++ basics tutorial",
+              "Abdul Bari C programming introduction"
+            ],
+            "practice_queries": [
+              "Write a C++ program to swap two numbers",
+              "Write a C++ program to check if a number is even or odd"
+            ]
+          },
+          {
+            "topic_id": "t1_2",
+            "title": "Control Flow (Conditional Statements, Loops)",
+            "estimated_minutes": 180,
+            "ai_note": "Building on basic syntax, control flow is essential for writing any meaningful program logic, allowing your code to make decisions and repeat actions.",
+            "resource_queries": [
+              "GeeksforGeeks C++ if-else tutorial",
+              "Abdul Bari

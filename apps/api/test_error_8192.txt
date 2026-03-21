@@ -1,0 +1,1 @@
+Gemini response was not valid JSON: Expecting ',' delimiter: line 21 column 12 (char 874)

@@ -1,0 +1,15 @@
+<roadmap>
+  {
+    "phases": [
+      {
+        "phase_id": "phase_1",
+        "title": "Foundations: Programming & Discrete Mathematics",
+        "duration_days": 14,
+        "topics": [
+          {
+            "topic_id": "t1_1",
+            "title": "Programming Fundamentals: Variables, Data Types, Operators",
+            "estimated_minutes": 180,
+            "ai_note": "We begin with programming fundamentals as they are the bedrock for understanding data structures and algorithms, which are central to GATE CSE. This topic introduces basic building blocks.",
+            "resource_queries": [
+              "Gate Smashers C programming tutorial for beginners",
