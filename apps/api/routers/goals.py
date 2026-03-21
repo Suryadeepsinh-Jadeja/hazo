@@ -29,6 +29,7 @@ import redis.asyncio as aioredis
 from bson import ObjectId
 from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
 from core.auth import get_current_user
@@ -280,7 +281,8 @@ async def _get_redis_json(key: str) -> Optional[dict]:
 
 async def _set_redis_json(key: str, value: dict, ex: int = 7200) -> None:
     rdb = get_redis()
-    await rdb.set(key, json.dumps(value), ex=ex)
+    encoded_value = jsonable_encoder(value)
+    await rdb.set(key, json.dumps(encoded_value), ex=ex)
 
 
 async def _del_redis(key: str) -> None:
