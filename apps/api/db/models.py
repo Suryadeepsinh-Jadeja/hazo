@@ -28,8 +28,8 @@ class WeeklyAvailability(BaseModel):
 
 class UserDB(MongoDocumentModel):
     supabase_id: str
-    email: str
-    name: str
+    email: Optional[str] = None
+    name: Optional[str] = None
     timezone: str = "Asia/Kolkata"
     preferred_reminder_time: str = "08:00"
     push_token: Optional[str] = None
