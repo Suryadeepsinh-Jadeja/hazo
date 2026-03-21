@@ -200,8 +200,7 @@ def roadmap_generation_prompt(profile: dict) -> str:
     domain_specific_answer = profile.get("domain_specific_answer", "")
     max_topic_minutes = int(daily_hours * 60 * 1.2)
 
-    return f"""You are an elite curriculum designer building a learning roadmap for an
-AI-powered goal-execution app called Stride.
+    return f"""You are an elite curriculum designer building a concise, focused learning roadmap for Stride.
 
 ── LEARNER PROFILE ──────────────────────────────────────────
 
@@ -214,70 +213,59 @@ Budget: {budget}
 External materials / syllabus: {external_materials if external_materials else "none provided"}
 Domain-specific context: {domain_specific_answer if domain_specific_answer else "none"}
 
-── HARD RULES (VIOLATING ANY = INVALID ROADMAP) ────────────
+── HARD RULES ───────────────────────────────────────────────
 
 1. PREREQUISITE ORDERING IS MANDATORY.
    Never schedule an advanced topic before its foundational prerequisites.
-   Example: "Binary Search Trees" must come after "Trees — intro & traversal".
 
 2. NO topic may exceed {max_topic_minutes} minutes (daily_hours × 60 × 1.2).
-   If a topic is bigger, split it into parts.
+   If a topic is bigger, split it into sub-topics.
 
-3. resource_queries must be SPECIFIC enough to find real content.
+3. BE CONCISE. Do NOT include redundant, obvious, or padded topics.
+   Every topic must be genuinely essential for achieving the goal.
+   Prefer depth over breadth. Cut topics a learner could skip.
+
+4. resource_queries: EXACTLY 2 per topic, highly specific.
    GOOD: "Abdul Bari stack data structure lecture"
    BAD:  "stack tutorial"
-   GOOD: "NeetCode two sum walkthrough"
-   BAD:  "array problem"
 
-4. Each ai_note must explain WHY this topic is placed RIGHT NOW.
-   It MUST reference the previous topic or prerequisite.
-   Example: "Now that you understand recursion (yesterday), trees are a
-   natural next step — every tree algorithm is recursive at its core."
+5. ai_note: ONE sentence max. Explain WHY this topic comes now.
+   Reference the previous topic or prerequisite.
 
-5. DOMAIN-SPECIFIC ORDERING:
+6. DOMAIN-SPECIFIC ORDERING:
    - competitive_programming: Arrays → Strings → Sorting → Hashing →
      LinkedList → Stacks/Queues → Trees → Graphs → DP → Advanced
-   - academic_exam: If external_materials contains a syllabus, follow that
-     syllabus's unit order exactly.  Weight units by typical exam marks.
-   - web_development: HTML/CSS → JS fundamentals → framework → backend →
-     database → deployment
-   - data_science: Python basics → stats → pandas/numpy → visualization →
-     ML fundamentals → advanced models
-   - fitness: Assessment → foundation weeks → progressive overload →
-     specialisation
-   - language_learning: Phonetics → basic grammar → vocabulary building →
-     reading → writing → conversation
-   - design: Design principles → tools (Figma) → wireframing → prototyping →
-     case studies
+   - academic_exam: Follow the syllabus unit order if provided.
+     Weight units by typical exam marks. Skip topics the learner already knows.
+   - web_development: HTML/CSS → JS fundamentals → framework → backend → database → deployment
+   - data_science: Python basics → stats → pandas/numpy → visualization → ML fundamentals → advanced models
+   - fitness: Assessment → foundation → progressive overload → specialisation
+   - language_learning: Phonetics → grammar → vocabulary → reading → writing → conversation
    - swe_career: DSA → system design → behavioural → mock interviews
-   - entrepreneurship: Idea validation → MVP → launch → growth
 
-6. Total duration of all phases must equal {timeline_days} days.
+7. Total duration of all phases must equal {timeline_days} days.
 
 ── OUTPUT FORMAT ────────────────────────────────────────────
 
 Output ONLY inside <roadmap>...</roadmap> XML tags.
-Inside the tags, produce valid JSON matching this schema exactly:
+Inside the tags, produce valid JSON matching this schema exactly.
+No markdown fences, no explanation — just the XML-wrapped JSON.
 
 {{
   "phases": [
     {{
       "phase_id": "phase_1",
-      "title": "Foundation — Core Data Structures",
+      "title": "Phase title",
       "duration_days": 7,
       "topics": [
         {{
           "topic_id": "t1",
-          "title": "Arrays — traversal, insertion, deletion",
+          "title": "Concise topic title",
           "estimated_minutes": 90,
-          "ai_note": "Starting with arrays because they are the most fundamental data structure and every other structure builds on contiguous memory concepts.",
+          "ai_note": "One sentence: why this topic now.",
           "resource_queries": [
-            "Abdul Bari arrays data structure lecture",
-            "NeetCode arrays basics playlist"
-          ],
-          "practice_queries": [
-            "LeetCode two-sum problem",
-            "LeetCode best-time-to-buy-and-sell-stock"
+            "Specific search query 1",
+            "Specific search query 2"
           ]
         }}
       ]
@@ -285,18 +273,11 @@ Inside the tags, produce valid JSON matching this schema exactly:
   ],
   "skill_nodes": [
     {{
-      "name": "Arrays",
+      "name": "Skill name",
       "prerequisites": []
-    }},
-    {{
-      "name": "Linked Lists",
-      "prerequisites": ["Arrays"]
     }}
   ]
 }}
-
-Do NOT output anything outside the <roadmap> tags.  No markdown, no
-explanation — just the XML-wrapped JSON.
 """
 
 
