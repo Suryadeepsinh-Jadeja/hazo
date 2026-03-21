@@ -10,7 +10,19 @@ from db.database import init_indexes
 async def lifespan(app: FastAPI):
     init_sentry()
     await init_indexes()
+    # Start the nightly scheduler
+    try:
+        from jobs.nightly_scheduler import start_scheduler, stop_scheduler
+        start_scheduler()
+    except Exception as exc:
+        logging.warning("Failed to start nightly scheduler: %s", exc)
     yield
+    # Stop the scheduler on shutdown
+    try:
+        from jobs.nightly_scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception:
+        pass
 
 app = FastAPI(lifespan=lifespan)
 register_exception_handlers(app)
