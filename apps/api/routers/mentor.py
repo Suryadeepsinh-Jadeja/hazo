@@ -188,7 +188,7 @@ async def mentor_chat(
     Error event:
         data: {"error": "..."}\n\n
     """
-    user_id = str(current_user.id)
+    user_id = current_user.supabase_id
     today_str = datetime.utcnow().strftime("%Y-%m-%d")
     rate_key = f"mentor:rate:{user_id}:{today_str}"
 
@@ -311,7 +311,7 @@ async def get_mentor_history(
     mentor_col = get_mentor_sessions_col()
     cursor = (
         mentor_col.find(
-            {"user_id": str(current_user.id), "goal_id": goal_id},
+            {"user_id": current_user.supabase_id, "goal_id": goal_id},
             {"_id": 0, "role": 1, "content": 1, "created_at": 1},
         )
         .sort("created_at", -1)
