@@ -10,17 +10,40 @@ from db.database import init_indexes
 async def lifespan(app: FastAPI):
     init_sentry()
     await init_indexes()
-    # Start the nightly scheduler
+    # Start the nightly scheduler + link health checker
     try:
-        from jobs.nightly_scheduler import start_scheduler, stop_scheduler
-        start_scheduler()
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from jobs.nightly_scheduler import run_nightly_scheduler
+        from jobs.link_health_checker import run_link_health_checker
+
+        _jobs_scheduler = AsyncIOScheduler()
+        _jobs_scheduler.add_job(
+            run_nightly_scheduler,
+            "interval",
+            hours=1,
+            id="nightly",
+            replace_existing=True,
+        )
+        _jobs_scheduler.add_job(
+            run_link_health_checker,
+            "cron",
+            day_of_week="sun",
+            hour=20,
+            minute=30,
+            id="link_health_weekly",
+            replace_existing=True,
+        )
+        app.state.jobs_scheduler = _jobs_scheduler
+        _jobs_scheduler.start()
+        logging.info("APScheduler started — nightly + weekly link-health jobs active.")
     except Exception as exc:
-        logging.warning("Failed to start nightly scheduler: %s", exc)
+        logging.warning("Failed to start background schedulers: %s", exc)
     yield
     # Stop the scheduler on shutdown
     try:
-        from jobs.nightly_scheduler import stop_scheduler
-        stop_scheduler()
+        sched = getattr(app.state, "jobs_scheduler", None)
+        if sched:
+            sched.shutdown(wait=False)
     except Exception:
         pass
 
