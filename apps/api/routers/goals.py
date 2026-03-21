@@ -463,10 +463,12 @@ async def _generate_roadmap_background(
             topic["resources"] = verified
             return topic
 
-        # Process in batches of 5 to avoid hammering Gemini rate limits.
+        # Process only the first 5 topics to avoid exhausting free-tier Gemini limits on 40+ topics.
+        # Future topics can be curated via JIT or background crons.
+        topics_to_curate = all_topics[:5]
         BATCH_SIZE = 5
-        for i in range(0, len(all_topics), BATCH_SIZE):
-            batch = all_topics[i : i + BATCH_SIZE]
+        for i in range(0, len(topics_to_curate), BATCH_SIZE):
+            batch = topics_to_curate[i : i + BATCH_SIZE]
             await asyncio.gather(*[_curate_and_verify(t) for t in batch])
 
         # ── d. Save GoalDB to MongoDB ──────────────────────────────────────

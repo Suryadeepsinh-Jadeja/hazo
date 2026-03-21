@@ -35,7 +35,7 @@ genai.configure(api_key=_API_KEY)
 
 logger = logging.getLogger("stride.ai.gemini")
 
-MODEL_NAME = "gemini-2.5-flash-lite"
+MODEL_NAME = "gemini-flash-latest"
 
 
 def get_model(
