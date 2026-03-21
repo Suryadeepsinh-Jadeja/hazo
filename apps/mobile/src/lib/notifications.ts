@@ -1,5 +1,5 @@
 import notifee, { TriggerType, TimestampTrigger, EventType, RepeatFrequency, AuthorizationStatus } from '@notifee/react-native';
-import messaging from '@react-native-firebase/messaging';
+import { getMessaging, getToken, requestPermission, AuthorizationStatus as FBAuthStatus } from '@react-native-firebase/messaging';
 import api from './api';
 
 /**
@@ -11,24 +11,25 @@ export async function registerForPushNotifications() {
     const notifeeAuth = await notifee.requestPermission();
 
     // Guard: Firebase may not be initialized in dev/emulator
-    let token: string | null = null;
+    let fcmToken: string | null = null;
     try {
-      const messagingAuth = await messaging().requestPermission();
+      const fbMessaging = getMessaging();
+      const messagingAuth = await requestPermission(fbMessaging);
       const enabled =
-        messagingAuth === messaging.AuthorizationStatus.AUTHORIZED ||
-        messagingAuth === messaging.AuthorizationStatus.PROVISIONAL ||
+        messagingAuth === FBAuthStatus.AUTHORIZED ||
+        messagingAuth === FBAuthStatus.PROVISIONAL ||
         notifeeAuth.authorizationStatus === AuthorizationStatus.AUTHORIZED;
 
       if (enabled) {
-        token = await messaging().getToken();
+        fcmToken = await getToken(fbMessaging);
       }
     } catch (firebaseErr) {
       // Firebase not configured — fall back to local-only notifications
       console.info('Firebase not available, using local notifications only.');
     }
 
-    if (token) {
-      await api.put('/api/v1/users/me/preferences', { push_token: token });
+    if (fcmToken) {
+      await api.put('/api/v1/users/me/preferences', { push_token: fcmToken });
     }
   } catch (error) {
     console.warn('Failed to register or sync push preferences', error);
