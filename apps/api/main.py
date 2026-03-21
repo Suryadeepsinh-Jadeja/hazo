@@ -6,8 +6,8 @@ from core.sentry import init_sentry
 from core.error_handler import register_exception_handlers
 from db.database import init_indexes
 
-from apps.api.jobs.nightly_scheduler import scheduler as nightly
-from apps.api.jobs.link_health_checker import scheduler as link_checker
+from jobs.nightly_scheduler import scheduler as nightly
+from jobs.link_health_checker import scheduler as link_checker
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
