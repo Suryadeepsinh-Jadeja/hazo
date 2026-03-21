@@ -2,6 +2,7 @@ package com.stride
 
 import android.app.Application
 import com.lugg.RNCConfig.RNCConfigPackage
+import com.reactcommunity.rndatetimepicker.RNDateTimePickerPackage
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
@@ -20,6 +21,7 @@ class MainApplication : Application(), ReactApplication {
             PackageList(this).packages.apply {
               // Packages that cannot be autolinked yet can be added manually here, for example:
               add(RNCConfigPackage())
+              add(RNDateTimePickerPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

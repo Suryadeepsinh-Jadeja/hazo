@@ -12,6 +12,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { GlobalToast } from '../components/Toast';
 import { theme } from '../constants/theme';
 import { initSentry } from '../lib/sentry';
+import { initializeOAuthDeepLinks } from '../lib/supabase';
 
 initSentry();
 
@@ -22,6 +23,11 @@ export const RootNavigator = () => {
 
   useEffect(() => {
     initialize();
+    const cleanupOAuthDeepLinks = initializeOAuthDeepLinks();
+
+    return () => {
+      cleanupOAuthDeepLinks();
+    };
   }, [initialize]);
 
   if (isLoading) {

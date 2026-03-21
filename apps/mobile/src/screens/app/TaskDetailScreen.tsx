@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Platform } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { ChevronLeft, Calendar, Trash2, RotateCcw, CheckSquare, Square } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
@@ -89,6 +89,28 @@ export const TaskDetailScreen = () => {
     ]);
   };
 
+  const handleDateChange = (_event: any, selectedDate?: Date) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      updateTask({ due_date: selectedDate.toISOString() });
+    }
+  };
+
+  const openDatePicker = () => {
+    const currentValue = task?.due_date ? new Date(task.due_date) : new Date();
+
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: currentValue,
+        mode: 'date',
+        onChange: handleDateChange,
+      });
+      return;
+    }
+
+    setShowDatePicker(true);
+  };
+
   if (loading || !task) {
     return (
       <View style={styles.loadingContainer}>
@@ -120,7 +142,7 @@ export const TaskDetailScreen = () => {
         />
 
         <View style={styles.metaRow}>
-          <TouchableOpacity style={styles.datePickerBtn} onPress={() => setShowDatePicker(true)}>
+          <TouchableOpacity style={styles.datePickerBtn} onPress={openDatePicker}>
              <Calendar color={theme.colors.primary.inkMuted} size={16} />
              <Text style={styles.dateText}>{task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No due date'}</Text>
           </TouchableOpacity>
@@ -134,15 +156,12 @@ export const TaskDetailScreen = () => {
           </View>
         </View>
 
-        {showDatePicker && (
+        {Platform.OS === 'ios' && showDatePicker && (
           <DateTimePicker
             value={task.due_date ? new Date(task.due_date) : new Date()}
             mode="date"
             display="default"
-            onChange={(_event: any, selectedDate: any) => {
-              setShowDatePicker(false);
-              if (selectedDate) updateTask({ due_date: selectedDate.toISOString() });
-            }}
+            onChange={handleDateChange}
           />
         )}
 

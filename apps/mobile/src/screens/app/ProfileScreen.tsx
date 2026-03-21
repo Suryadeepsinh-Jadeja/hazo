@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Modal, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Modal, TextInput, Platform } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Flame, CheckCircle, Target, LogOut, X, Clock } from 'lucide-react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
@@ -94,6 +94,20 @@ export const ProfileScreen = () => {
          scheduleDailyReminder(timeStr);
       }
     }
+  };
+
+  const openReminderTimePicker = () => {
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: reminderTime,
+        mode: 'time',
+        is24Hour: false,
+        onChange: handleTimeChange,
+      });
+      return;
+    }
+
+    setShowTimePicker(true);
   };
 
   const handleSaveDayAvailability = () => {
@@ -189,7 +203,7 @@ export const ProfileScreen = () => {
           <View style={styles.settingLeft}>
              <Text style={styles.settingText}>Daily Reminder</Text>
              {reminderEnabled && (
-                <TouchableOpacity style={styles.timeTag} onPress={() => setShowTimePicker(true)}>
+                <TouchableOpacity style={styles.timeTag} onPress={openReminderTimePicker}>
                    <Clock color={theme.colors.primary.inkMuted} size={14} />
                    <Text style={styles.timeTagText}>
                      {reminderTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
@@ -204,7 +218,7 @@ export const ProfileScreen = () => {
             thumbColor={reminderEnabled ? theme.colors.accent.coral : theme.colors.neutral.white}
           />
         </View>
-        {showTimePicker && (
+        {Platform.OS === 'ios' && showTimePicker && (
           <DateTimePicker
             value={reminderTime}
             mode="time"

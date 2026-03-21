@@ -1,6 +1,6 @@
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppState } from 'react-native';
+import { Linking } from 'react-native';
 import Config from 'react-native-config';
 import { createClient } from '@supabase/supabase-js';
 
@@ -32,13 +32,77 @@ export const signUpWithEmail = async (email: string, password: string, name: str
   });
 };
 
+const handleOAuthRedirect = async (url: string) => {
+  if (!url.startsWith(appRedirectUrl)) {
+    return;
+  }
+
+  const parsedUrl = new URL(url);
+  const code = parsedUrl.searchParams.get('code');
+
+  if (code) {
+    await supabase.auth.exchangeCodeForSession(code);
+    return;
+  }
+
+  const hash = parsedUrl.hash.startsWith('#') ? parsedUrl.hash.slice(1) : parsedUrl.hash;
+  const hashParams = new URLSearchParams(hash);
+  const accessToken = hashParams.get('access_token');
+  const refreshToken = hashParams.get('refresh_token');
+
+  if (accessToken && refreshToken) {
+    await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+  }
+};
+
+export const initializeOAuthDeepLinks = () => {
+  Linking.getInitialURL()
+    .then((initialUrl) => {
+      if (initialUrl) {
+        return handleOAuthRedirect(initialUrl);
+      }
+    })
+    .catch((error) => {
+      console.warn('Failed to process initial auth redirect:', error);
+    });
+
+  const subscription = Linking.addEventListener('url', ({ url }) => {
+    handleOAuthRedirect(url).catch((error) => {
+      console.warn('Failed to process auth redirect:', error);
+    });
+  });
+
+  return () => {
+    subscription.remove();
+  };
+};
+
 export const signInWithGoogle = async () => {
-  return await supabase.auth.signInWithOAuth({
+  const response = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
       redirectTo: appRedirectUrl,
+      skipBrowserRedirect: true,
     },
   });
+
+  if (response.error) {
+    return response;
+  }
+
+  if (!response.data?.url) {
+    return {
+      data: response.data,
+      error: new Error('Supabase did not return a Google sign-in URL.'),
+    };
+  }
+
+  await Linking.openURL(response.data.url);
+
+  return response;
 };
 
 export const signOut = async () => {
