@@ -182,3 +182,20 @@ async def run_link_health_checker() -> None:
         checked,
         fixed,
     )
+
+# ---------------------------------------------------------------------------
+# APScheduler setup
+# ---------------------------------------------------------------------------
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+scheduler = AsyncIOScheduler()
+scheduler.add_job(
+    run_link_health_checker,
+    "cron",
+    day_of_week="sun",
+    hour=20,
+    minute=30,
+    id="link_health_weekly",
+    replace_existing=True,
+)

@@ -435,33 +435,16 @@ async def run_nightly_scheduler() -> None:
 
 
 # ---------------------------------------------------------------------------
-# APScheduler setup (called from main.py lifespan)
+# APScheduler setup
 # ---------------------------------------------------------------------------
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-_scheduler = None
-
-
-def start_scheduler() -> None:
-    """Start the APScheduler with the hourly nightly job."""
-    global _scheduler
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
-    _scheduler = AsyncIOScheduler()
-    _scheduler.add_job(
-        run_nightly_scheduler,
-        "interval",
-        hours=1,
-        id="nightly",
-        replace_existing=True,
-    )
-    _scheduler.start()
-    logger.info("APScheduler started — nightly job runs every hour.")
-
-
-def stop_scheduler() -> None:
-    """Gracefully shut down the scheduler."""
-    global _scheduler
-    if _scheduler:
-        _scheduler.shutdown(wait=False)
-        logger.info("APScheduler stopped.")
+scheduler = AsyncIOScheduler()
+scheduler.add_job(
+    run_nightly_scheduler,
+    "interval",
+    hours=1,
+    id="nightly",
+    replace_existing=True,
+)
