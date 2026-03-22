@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Dimensions, ActivityIndicator } from 'react-native';
 import { DownloadCloud, AlertCircle } from 'lucide-react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useQuery as useReactQuery } from '@tanstack/react-query';
+import { useRoute } from '@react-navigation/native';
 import { RadarChart } from '../../components/RadarChart';
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
+import { useGoalStore } from '../../store/goalStore';
 
 const { width } = Dimensions.get('window');
 
@@ -18,15 +19,18 @@ interface Skill {
 }
 
 export const SkillsScreen = () => {
+  const route = useRoute<any>();
   const { user } = useAuthStore();
-  const goalId = 'mock-goal-id'; // Pulled from a global activeGoalId state in production
+  const { activeGoalId } = useGoalStore();
+  const goalId = route.params?.goalId || activeGoalId;
 
-  const { data: skills, isLoading } = useReactQuery<Skill[]>({
+  const { data: skills, isLoading } = useQuery<Skill[]>({
     queryKey: ['skills', goalId],
     queryFn: async () => {
       const res = await api.get(`/api/v1/skills/${goalId}`);
       return res.data;
-    }
+    },
+    enabled: !!goalId,
   });
 
   const handleExport = () => {
@@ -67,6 +71,14 @@ export const SkillsScreen = () => {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator color={theme.colors.accent.coral} />
+      </View>
+    );
+  }
+
+  if (!goalId) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.emptyText}>Select a goal to view its skills graph.</Text>
       </View>
     );
   }
@@ -164,6 +176,11 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.neutral.cream,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  emptyText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.base,
+    color: theme.colors.primary.inkMuted,
   },
   header: {
     flexDirection: 'row',

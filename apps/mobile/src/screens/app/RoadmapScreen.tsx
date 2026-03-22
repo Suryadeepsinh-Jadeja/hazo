@@ -6,11 +6,13 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-na
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 import { TopicRow } from '../../components/TopicRow';
+import { useGoalStore } from '../../store/goalStore';
 
 export const RoadmapScreen = () => {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { goalId } = route.params || {};
+  const { setActiveGoalId } = useGoalStore();
 
   const [roadmap, setRoadmap] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -19,8 +21,11 @@ export const RoadmapScreen = () => {
   const fabScale = useSharedValue(1);
 
   useEffect(() => {
+    if (goalId) {
+      setActiveGoalId(goalId);
+    }
     fetchRoadmap();
-  }, [goalId]);
+  }, [goalId, setActiveGoalId]);
 
   const fetchRoadmap = async () => {
     try {
@@ -71,7 +76,7 @@ export const RoadmapScreen = () => {
           <ChevronLeft color={theme.colors.primary.ink} size={28} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{roadmap.title}</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('SkillsScreen')}>
+        <TouchableOpacity onPress={() => navigation.navigate('SkillsScreen', { goalId })}>
           <Text style={styles.headerAction}>Skills Graph</Text>
         </TouchableOpacity>
       </View>
@@ -80,13 +85,14 @@ export const RoadmapScreen = () => {
          {/* Timeline */}
          <View style={styles.timelineContainer}>
             {roadmap.phases.map((phase: any, index: number) => {
-               const isCollapsed = collapsedPhases[phase._id];
+               const phaseKey = phase.phase_id || `phase-${index}`;
+               const isCollapsed = collapsedPhases[phaseKey];
                const total = phase.topics.length;
                const done = phase.topics.filter((t:any) => t.status === 'done').length;
 
                return (
-                 <View key={phase._id} style={styles.phaseBlock}>
-                   <TouchableOpacity style={styles.phaseHeader} onPress={() => togglePhase(phase._id)} activeOpacity={0.7}>
+                 <View key={phaseKey} style={styles.phaseBlock}>
+                   <TouchableOpacity style={styles.phaseHeader} onPress={() => togglePhase(phaseKey)} activeOpacity={0.7}>
                       <View style={styles.phaseHeaderLeft}>
                         {isCollapsed ? <ChevronDown color={theme.colors.primary.ink} size={20} /> : <ChevronUp color={theme.colors.primary.ink} size={20} />}
                         <Text style={styles.phaseTitle}>Phase {index + 1}: {phase.title}</Text>
@@ -98,11 +104,11 @@ export const RoadmapScreen = () => {
                      <View style={styles.topicsList}>
                         <View style={styles.verticalTimelineStem} />
                         {phase.topics.map((topic: any) => (
-                           <View key={topic._id} style={styles.topicRowWrapper}>
+                           <View key={topic.topic_id} style={styles.topicRowWrapper}>
                              <TopicRow 
                                topic={topic} 
-                               isToday={topic.is_today} 
-                               isLocked={topic.is_locked} 
+                               isToday={topic.day_index === roadmap.current_day_index}
+                               isLocked={topic.status === 'locked'}
                                onPress={() => {}} 
                              />
                            </View>

@@ -2,7 +2,7 @@ import React, { useCallback, useState, useEffect, memo, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal, Dimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { LinearGradient } from 'react-native-linear-gradient';
+import LinearGradient from 'react-native-linear-gradient';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, withRepeat, withDelay, Easing } from 'react-native-reanimated';
 import { PlayCircle, FileText, CheckCircle, Flame, Plus, Lock, Clock, BookOpen } from 'lucide-react-native';
 import { Linking } from 'react-native';
@@ -115,40 +115,47 @@ export const TodayScreen = () => {
   const { data: taskCard, isLoading, isError, refetch, isRefetching } = useQuery<DailyTaskCard>({
     queryKey: ['todayTask', activeGoalId],
     queryFn: async () => {
-      const res = await api.get(`/api/v1/goals/today?goalId=${activeGoalId || ''}`);
+      const res = await api.get(`/api/v1/goals/${activeGoalId}/today`);
       return res.data;
     },
     enabled: !!activeGoalId,
   });
 
+  const primaryTopic = taskCard?.topics?.[0];
+
   // Mutations
   const completeMutation = useMutation({
-    mutationFn: async () => {
-      await api.post(`/api/v1/goals/complete-today`, { goalId: activeGoalId });
+    mutationFn: async (topicId: string) => {
+      await api.post(`/api/v1/goals/${activeGoalId}/topics/${topicId}/complete`);
     },
     onSuccess: () => {
       setConfettiActive(true);
       setToastVisible(true);
       setTimeout(() => setToastVisible(false), 3000);
       setTimeout(() => setConfettiActive(false), 3500);
-      queryClient.invalidateQueries({ queryKey: ['todayTask'] });
+      queryClient.invalidateQueries({ queryKey: ['todayTask', activeGoalId] });
+      queryClient.invalidateQueries({ queryKey: ['goals'] });
+      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+      queryClient.invalidateQueries({ queryKey: ['userStats'] });
     }
   });
 
   const simplifyMutation = useMutation({
-    mutationFn: async () => {
-      await api.post(`/api/v1/goals/simplify-today`, { goalId: activeGoalId });
+    mutationFn: async (topicId: string) => {
+      await api.post(`/api/v1/goals/${activeGoalId}/topics/${topicId}/skip`);
     },
     onSuccess: () => {
       setSimplifyModalVisible(false);
-      queryClient.invalidateQueries({ queryKey: ['todayTask'] });
+      queryClient.invalidateQueries({ queryKey: ['todayTask', activeGoalId] });
     }
   });
 
   // Handlers
   const handleMarkDone = useCallback(() => {
-    completeMutation.mutate();
-  }, [completeMutation]);
+    if (primaryTopic?.topic_id) {
+      completeMutation.mutate(primaryTopic.topic_id);
+    }
+  }, [completeMutation, primaryTopic?.topic_id]);
 
   const handleAskMentor = useCallback(() => {
     navigation.navigate('Mentor', { goalId: activeGoalId });
@@ -199,7 +206,6 @@ export const TodayScreen = () => {
   if (isLoading) return renderSkeleton();
   if (isError || !taskCard) return renderError();
 
-  const primaryTopic = taskCard.topics?.[0];
   const confettiColors = [theme.colors.accent.coral, theme.colors.positive.sage, theme.colors.warning.amber, theme.colors.danger.rose];
 
   return (
@@ -220,11 +226,11 @@ export const TodayScreen = () => {
         {/* Phase Progress */}
         <View style={styles.progressContainer}>
           <View style={styles.progressTextRow}>
-            <Text style={styles.phaseTitleText}>{taskCard.phase_title}</Text>
-            <Text style={styles.dayIndexText}>Day {taskCard.day_index} of {taskCard.total_days}</Text>
+            <Text style={styles.phaseTitleText}>{taskCard.phase_title || taskCard.goal_title || 'Today'}</Text>
+            <Text style={styles.dayIndexText}>Day {(taskCard.day_index || 0) + 1} of {taskCard.total_days || '—'}</Text>
           </View>
           <View style={styles.progressBarBg}>
-             <View style={[styles.progressBarFill, { width: `${(taskCard.day_index / taskCard.total_days) * 100}%` }]} />
+             <View style={[styles.progressBarFill, { width: `${Math.min(100, (((taskCard.day_index || 0) + 1) / Math.max(taskCard.total_days || 1, 1)) * 100)}%` }]} />
           </View>
         </View>
 
@@ -250,7 +256,7 @@ export const TodayScreen = () => {
             end={{ x: 1, y: 1 }}
             style={styles.heroGradientHeader}
           >
-            <Text style={styles.phaseLabel}>TODAY'S TASK • PHASE {taskCard.day_index}</Text>
+            <Text style={styles.phaseLabel}>TODAY'S TASK • DAY {(taskCard.day_index || 0) + 1}</Text>
             <Text style={styles.topicTitle}>{primaryTopic?.title || 'No Tasks Today'}</Text>
             
             <View style={styles.timeChip}>
@@ -274,7 +280,7 @@ export const TodayScreen = () => {
             <TouchableOpacity 
               style={[styles.doneButton, completeMutation.isPending && { opacity: 0.7 }]} 
               onPress={handleMarkDone}
-              disabled={completeMutation.isPending}
+              disabled={completeMutation.isPending || !primaryTopic?.topic_id}
             >
               <Text style={styles.doneButtonText}>{completeMutation.isPending ? 'Completing...' : 'Mark as Done ✓'}</Text>
             </TouchableOpacity>
@@ -316,10 +322,10 @@ export const TodayScreen = () => {
          <View style={styles.modalOverlay}>
            <View style={styles.bottomSheet}>
              <Text style={styles.modalTitle}>Too much today?</Text>
-             <Text style={styles.modalBody}>No problem — I'll shrink today's task so you can keep your momentum without burning out.</Text>
+             <Text style={styles.modalBody}>No problem. For now, Stride can skip today&apos;s top topic and move you forward without breaking the plan.</Text>
              
-             <TouchableOpacity style={styles.primaryButton} onPress={() => simplifyMutation.mutate()} disabled={simplifyMutation.isPending}>
-                <Text style={styles.primaryButtonText}>{simplifyMutation.isPending ? 'Simplifying...' : 'Simplify Task'}</Text>
+             <TouchableOpacity style={styles.primaryButton} onPress={() => primaryTopic?.topic_id && simplifyMutation.mutate(primaryTopic.topic_id)} disabled={simplifyMutation.isPending || !primaryTopic?.topic_id}>
+                <Text style={styles.primaryButtonText}>{simplifyMutation.isPending ? 'Skipping...' : 'Skip Top Task'}</Text>
              </TouchableOpacity>
              
              <TouchableOpacity style={styles.cancelButton} onPress={() => setSimplifyModalVisible(false)} disabled={simplifyMutation.isPending}>

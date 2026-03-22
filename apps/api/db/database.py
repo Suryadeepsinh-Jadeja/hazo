@@ -5,7 +5,8 @@ from pymongo import IndexModel, ASCENDING
 from pymongo.errors import OperationFailure
 from dotenv import load_dotenv
 
-load_dotenv()
+_API_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
+load_dotenv(_API_ENV_PATH)
 
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 client = AsyncIOMotorClient(

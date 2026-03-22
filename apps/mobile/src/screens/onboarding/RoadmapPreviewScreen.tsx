@@ -3,13 +3,14 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
-
+import { useGoalStore } from '../../store/goalStore';
 
 
 export const RoadmapPreviewScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { goalId } = route.params || {};
+  const { setActiveGoalId } = useGoalStore();
 
   const [roadmap, setRoadmap] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -29,7 +30,10 @@ export const RoadmapPreviewScreen = () => {
   }, [goalId]);
 
   const handleStart = () => {
-    navigation.navigate('Today');
+    if (goalId) {
+      setActiveGoalId(goalId);
+    }
+    navigation.navigate('Tabs', { screen: 'Today' });
   };
 
   if (loading) {

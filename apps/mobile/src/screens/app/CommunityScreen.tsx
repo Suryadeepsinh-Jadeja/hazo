@@ -58,10 +58,14 @@ export const CommunityScreen = () => {
     navigation.navigate('RoomFeedScreen', { roomId });
   };
 
-  const filteredRooms = rooms?.filter((r: CommunityRoom) => 
-    r.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    r.domain.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredRooms = rooms?.filter((room: any) => {
+    const name = room.name || '';
+    const domain = room.domain || '';
+    return (
+      name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      domain.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  });
 
   return (
     <View style={styles.container}>
@@ -90,10 +94,17 @@ export const CommunityScreen = () => {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
       >
-        {filteredRooms?.map((room: CommunityRoom) => (
+        {filteredRooms?.map((room: any) => (
           <RoomCard 
-            key={room.id} 
-            room={room} 
+            key={room.id || room._id} 
+            room={{
+              id: room.id || room._id,
+              name: room.name,
+              domain: room.domain,
+              memberCount: room.memberCount || room.member_count || 0,
+              targetDate: room.targetDate || room.target_date || 'Ongoing',
+              userJoined: room.userJoined,
+            }} 
             onJoin={handleJoin} 
             onPress={handlePressRoom} 
           />

@@ -61,7 +61,7 @@ export const MentorScreen = () => {
   const route = useRoute<any>();
   const { goalId, topicTitle = "Goal Intake" } = route.params || {};
   const { session } = useAuthStore();
-  const token = session?.access_token || 'mock_token_123';
+  const token = session?.access_token;
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -72,7 +72,7 @@ export const MentorScreen = () => {
 
   const handleSend = async (overrideText?: string) => {
     const textToSend = overrideText || inputText;
-    if (!textToSend.trim() || isStreaming || rateLimited) return;
+    if (!textToSend.trim() || isStreaming || rateLimited || !token || !goalId) return;
 
     Keyboard.dismiss();
     setInputText('');
@@ -92,13 +92,10 @@ export const MentorScreen = () => {
     // Create a blank assistant message in state
     setMessages(prev => [{ id: assistantMessageId, role: 'assistant', content: '' }, ...prev]);
 
-    // Explicit stream endpoint configured for Config module
-    const API_URL = Config.API_URL;
-    let url = API_URL ? `${API_URL}/api/v1/mentor/stream` : 'http://localhost:8000/api/v1/mentor/stream';
+    const apiBaseUrl = Config.API_URL || Config.PUBLIC_API_URL || 'http://localhost:8000';
+    const url = `${apiBaseUrl}/api/v1/mentor/chat`;
 
     try {
-      if (!API_URL) throw new Error('API_URL not set');
-
       const response = await fetch(url, {
         method: 'POST',
         headers: { 

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Platform } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import { ChevronLeft, Calendar, Trash2, RotateCcw, CheckSquare, Square } from 'lucide-react-native';
+import { ChevronLeft, Calendar, Trash2, CheckSquare, Square } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 
@@ -22,16 +22,21 @@ const MOCK_DETAIL = {
 export const TaskDetailScreen = () => {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
-  const { taskId } = route.params || {};
+  const { taskId, task: initialTask } = route.params || {};
 
   const [task, setTask] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [regenLoading, setRegenLoading] = useState(false);
 
   useEffect(() => {
+    if (initialTask) {
+      setTask(initialTask);
+      setLoading(false);
+      return;
+    }
+
     fetchTask();
-  }, [taskId]);
+  }, [initialTask, taskId]);
 
   const fetchTask = async () => {
     try {
@@ -54,28 +59,19 @@ export const TaskDetailScreen = () => {
   };
 
   const toggleSubtask = async (subtaskId: string, currentStatus: string) => {
-    const newStatus = currentStatus === 'pending' ? 'done' : 'pending';
+    if (currentStatus === 'done') {
+      return;
+    }
+
     const newSubtasks = task.ai_subtasks.map((s: any) => 
-      s.subtask_id === subtaskId ? { ...s, status: newStatus } : s
+      s.subtask_id === subtaskId ? { ...s, status: 'done' } : s
     );
     setTask({ ...task, ai_subtasks: newSubtasks });
 
     try {
-      await api.post(`/api/v1/tasks/${taskId}/subtasks/${subtaskId}/toggle`);
+      await api.post(`/api/v1/tasks/${taskId}/subtasks/${subtaskId}/complete`);
     } catch {
-      // Mocked updates persist locally in state.
-    }
-  };
-
-  const handleRegenerate = async () => {
-    setRegenLoading(true);
-    try {
-      const res = await api.post(`/api/v1/tasks/${taskId}/regenerate-subtasks`);
-      setTask({ ...task, ai_subtasks: res.data.ai_subtasks });
-    } catch {
-      setTask({ ...task, ai_subtasks: [{ subtask_id: 'mock-new', title: 'New generated AI step', status: 'pending' }] });
-    } finally {
-      setRegenLoading(false);
+      setTask(task);
     }
   };
 
@@ -191,12 +187,6 @@ export const TaskDetailScreen = () => {
             </TouchableOpacity>
           ))}
 
-          {completedCount === 0 && (
-            <TouchableOpacity style={styles.regenButton} onPress={handleRegenerate} disabled={regenLoading}>
-              <RotateCcw color={theme.colors.primary.inkMuted} size={16} />
-              <Text style={styles.regenText}>{regenLoading ? 'Regenerating...' : 'Regenerate Subtasks'}</Text>
-            </TouchableOpacity>
-          )}
         </View>
       </ScrollView>
 

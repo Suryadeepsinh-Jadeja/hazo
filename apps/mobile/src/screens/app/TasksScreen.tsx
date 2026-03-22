@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView, Alert, RefreshControl } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, RefreshControl } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -19,16 +19,23 @@ export const TasksScreen = () => {
   const [modalVisible, setModalVisible] = useState(false);
 
   const { data: tasks, isLoading, refetch } = useQuery({
-    queryKey: ['tasks', activeFilter],
+    queryKey: ['tasks'],
     staleTime: 2 * 60 * 1000, // 2 minutes
     queryFn: async () => {
-      const res = await api.get(`/api/v1/tasks?filter=${activeFilter.toLowerCase()}`);
+      const res = await api.get('/api/v1/tasks');
       return res.data;
     }
   });
 
   const completeMutation = useMutation({
-    mutationFn: async (id: string) => api.post(`/api/v1/tasks/${id}/complete`),
+    mutationFn: async (task: any) => {
+      const nextPendingSubtask = task.ai_subtasks?.find((subtask: any) => subtask.status !== 'done');
+      if (!nextPendingSubtask) {
+        return;
+      }
+
+      return api.post(`/api/v1/tasks/${task._id}/subtasks/${nextPendingSubtask.subtask_id}/complete`);
+    },
     onSuccess: () => {
       ReactNativeHapticFeedback.trigger('impactHeavy');
     
@@ -44,7 +51,7 @@ export const TasksScreen = () => {
     }
   });
 
-  const handleSwipeComplete = (id: string) => completeMutation.mutate(id);
+  const handleSwipeComplete = (task: any) => completeMutation.mutate(task);
   
   const handleSwipeDelete = (id: string) => {
     Alert.alert("Delete Task", "Are you sure you want to remove this task?", [
@@ -83,13 +90,13 @@ export const TasksScreen = () => {
         renderRightActions={() => renderRightActions(item._id)}
         renderLeftActions={() => renderLeftActions(item._id)}
         onSwipeableOpen={(direction) => {
-          if (direction === 'left') handleSwipeComplete(item._id);
+          if (direction === 'left') handleSwipeComplete(item);
           if (direction === 'right') handleSwipeDelete(item._id);
         }}
       >
         <TouchableOpacity 
           style={[styles.taskCard, isDone && { opacity: 0.6 }]} 
-          onPress={() => navigation.navigate('TaskDetailScreen', { taskId: item._id })}
+          onPress={() => navigation.navigate('TaskDetailScreen', { taskId: item._id, task: item })}
           activeOpacity={0.8}
         >
           <View style={styles.taskCardRow}>
@@ -119,6 +126,32 @@ export const TasksScreen = () => {
     </View>
   );
 
+  const filteredTasks = (tasks || []).filter((task: any) => {
+    if (activeFilter === 'Done') {
+      return task.status === 'done';
+    }
+
+    if (activeFilter === 'Overdue') {
+      return task.status === 'overdue';
+    }
+
+    if (activeFilter === 'Today') {
+      if (!task.due_date) {
+        return task.status !== 'done';
+      }
+
+      const dueDate = new Date(task.due_date);
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayEnd = new Date();
+      todayEnd.setHours(23, 59, 59, 999);
+
+      return task.status !== 'done' && dueDate >= todayStart && dueDate <= todayEnd;
+    }
+
+    return true;
+  });
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -147,7 +180,7 @@ export const TasksScreen = () => {
       {/* List */}
       <View style={{ flex: 1 }}>
         <FlashList
-          data={tasks || []}
+          data={filteredTasks}
           renderItem={renderTask}
           keyExtractor={(it: any) => it._id}
           estimatedItemSize={76}

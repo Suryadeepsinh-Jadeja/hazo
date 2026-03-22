@@ -6,16 +6,20 @@ import { theme } from '../constants/theme';
 export interface GoalCardProps {
   goal: {
     title: string;
-    current_phase: string;
-    current_day: number;
+    current_day_index: number;
     total_days: number;
-    status: 'active' | 'paused' | 'completed';
-    streak: number;
+    status: 'active' | 'paused' | 'completed' | 'abandoned';
+    timeline_target?: string;
   };
   onPress: () => void;
 }
 
 export const GoalCard = ({ goal, onPress }: GoalCardProps) => {
+  const currentDay = Math.min((goal.current_day_index || 0) + 1, goal.total_days || 1);
+  const targetDate = goal.timeline_target
+    ? new Date(goal.timeline_target).toLocaleDateString()
+    : null;
+
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.header}>
@@ -38,17 +42,24 @@ export const GoalCard = ({ goal, onPress }: GoalCardProps) => {
       </View>
 
       <View style={styles.progressRow}>
-        <Text style={styles.phaseText} numberOfLines={1}>{goal.current_phase}</Text>
-        <Text style={styles.daysText}>Day {goal.current_day} of {goal.total_days}</Text>
+        <Text style={styles.phaseText} numberOfLines={1}>
+          {targetDate ? `Target ${targetDate}` : 'Active roadmap'}
+        </Text>
+        <Text style={styles.daysText}>Day {currentDay} of {goal.total_days}</Text>
       </View>
 
       <View style={styles.progressBarBg}>
-        <View style={[styles.progressBarFill, { width: `${Math.min(100, (goal.current_day / goal.total_days) * 100)}%` }]} />
+        <View
+          style={[
+            styles.progressBarFill,
+            { width: `${Math.min(100, (currentDay / (goal.total_days || 1)) * 100)}%` },
+          ]}
+        />
       </View>
 
       <View style={styles.streakRow}>
         <Flame color={theme.colors.accent.coralDark} size={16} strokeWidth={2.5} />
-        <Text style={styles.streakText}>{goal.streak} Day Streak</Text>
+        <Text style={styles.streakText}>{currentDay}/{goal.total_days} complete</Text>
       </View>
     </TouchableOpacity>
   );

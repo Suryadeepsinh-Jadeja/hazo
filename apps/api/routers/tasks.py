@@ -49,6 +49,12 @@ class CreateTaskRequest(BaseModel):
     linked_goal_id: Optional[str] = None
 
 
+class UpdateTaskRequest(BaseModel):
+    raw_input: Optional[str] = None
+    due_date: Optional[str] = None
+    priority: Optional[Literal["low", "medium", "high"]] = None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -244,6 +250,83 @@ async def get_tasks_today(current_user: UserDB = Depends(get_current_user)):
         tasks.append(doc)
 
     return tasks
+
+
+# ---------------------------------------------------------------------------
+# GET /{task_id}
+# ---------------------------------------------------------------------------
+
+@router.get("/{task_id}")
+async def get_task(
+    task_id: str,
+    current_user: UserDB = Depends(get_current_user),
+):
+    tasks_col = get_tasks_col()
+
+    try:
+        oid = ObjectId(task_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid task_id format.")
+
+    task_doc = await tasks_col.find_one({"_id": oid, "user_id": str(current_user.id)})
+    if task_doc is None:
+        raise HTTPException(status_code=404, detail="Task not found.")
+
+    due = task_doc.get("due_date")
+    if due and isinstance(due, datetime) and due < datetime.utcnow() and task_doc.get("status") == "pending":
+        task_doc["status"] = "overdue"
+
+    return _doc_to_dict(task_doc)
+
+
+# ---------------------------------------------------------------------------
+# PUT /{task_id}
+# ---------------------------------------------------------------------------
+
+@router.put("/{task_id}")
+async def update_task(
+    task_id: str,
+    body: UpdateTaskRequest,
+    current_user: UserDB = Depends(get_current_user),
+):
+    tasks_col = get_tasks_col()
+
+    try:
+        oid = ObjectId(task_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid task_id format.")
+
+    existing_task = await tasks_col.find_one({"_id": oid, "user_id": str(current_user.id)})
+    if existing_task is None:
+        raise HTTPException(status_code=404, detail="Task not found.")
+
+    payload = body.model_dump(exclude_unset=True)
+    update_fields: Dict[str, Any] = {}
+
+    if "raw_input" in payload:
+        raw_input = (payload.get("raw_input") or "").strip()
+        if not raw_input:
+            raise HTTPException(status_code=422, detail="Task title cannot be empty.")
+        update_fields["raw_input"] = raw_input
+
+    if "due_date" in payload:
+        update_fields["due_date"] = _parse_iso_date(payload.get("due_date"))
+
+    if "priority" in payload and payload.get("priority") is not None:
+        update_fields["priority"] = payload["priority"]
+
+    if update_fields:
+        await tasks_col.update_one({"_id": oid}, {"$set": update_fields})
+
+    updated_task = await tasks_col.find_one({"_id": oid, "user_id": str(current_user.id)})
+    if updated_task is None:
+        raise HTTPException(status_code=404, detail="Task not found.")
+
+    due = updated_task.get("due_date")
+    if due and isinstance(due, datetime) and due < datetime.utcnow() and updated_task.get("status") == "pending":
+        updated_task["status"] = "overdue"
+
+    return _doc_to_dict(updated_task)
 
 
 # ---------------------------------------------------------------------------

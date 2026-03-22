@@ -4,8 +4,9 @@ import { Linking } from 'react-native';
 import Config from 'react-native-config';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = Config.SUPABASE_URL || '';
-const supabaseAnonKey = Config.SUPABASE_ANON_KEY || '';
+const supabaseUrl = Config.SUPABASE_URL || Config.PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey =
+  Config.SUPABASE_ANON_KEY || Config.PUBLIC_SUPABASE_ANON_KEY || '';
 const appRedirectUrl = 'stride://auth';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

@@ -2,7 +2,7 @@ import * as Sentry from '@sentry/react-native';
 import Config from 'react-native-config';
 
 export const initSentry = () => {
-  const dsn = Config.SENTRY_DSN || '';
+  const dsn = Config.SENTRY_DSN || Config.PUBLIC_SENTRY_DSN || '';
   if (!dsn) {
     console.warn('SENTRY_DSN not found. Sentry telemetry is disabled.');
     return;

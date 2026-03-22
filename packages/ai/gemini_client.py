@@ -22,6 +22,10 @@ from dotenv import load_dotenv
 # ---------------------------------------------------------------------------
 
 # Load from .env if present (e.g. apps/api/.env or current working directory)
+_API_ENV_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "apps", "api", ".env")
+)
+load_dotenv(_API_ENV_PATH)
 load_dotenv()
 
 _API_KEY = os.environ.get("GOOGLE_GEMINI_API_KEY", "")

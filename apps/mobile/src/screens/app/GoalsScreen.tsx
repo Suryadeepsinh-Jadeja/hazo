@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
@@ -6,9 +6,11 @@ import { Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 import { GoalCard } from '../../components/GoalCard';
+import { useGoalStore } from '../../store/goalStore';
 
 export const GoalsScreen = () => {
   const navigation = useNavigation<any>();
+  const { activeGoalId, setActiveGoalId } = useGoalStore();
 
   const { data: goals, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['goals'],
@@ -18,6 +20,20 @@ export const GoalsScreen = () => {
       return res.data;
     }
   });
+
+  useEffect(() => {
+    if (!goals?.length) {
+      if (activeGoalId) {
+        setActiveGoalId(null);
+      }
+      return;
+    }
+
+    const hasSelectedGoal = goals.some((goal: any) => goal._id === activeGoalId);
+    if (!hasSelectedGoal) {
+      setActiveGoalId(goals[0]._id);
+    }
+  }, [activeGoalId, goals, setActiveGoalId]);
 
   const handleAddGoal = () => {
     // Navigates directly into the onboarding stack to establish a new goal
@@ -60,7 +76,10 @@ export const GoalsScreen = () => {
               <GoalCard 
                 key={goal._id} 
                 goal={goal} 
-                onPress={() => navigation.navigate('RoadmapScreen', { goalId: goal._id })} 
+                onPress={() => {
+                  setActiveGoalId(goal._id);
+                  navigation.navigate('RoadmapScreen', { goalId: goal._id });
+                }} 
               />
             ))}
           </View>

@@ -68,7 +68,7 @@ export const AddTaskModal = ({ visible, onClose, onSuccess }: AddTaskModalProps)
        handleClose();
        resetForm();
      } catch (e: any) {
-       const msg = e?.response?.data?.detail || e?.message || 'Could not create task';
+       const msg = e?.response?.data?.message || e?.response?.data?.detail || e?.message || 'Could not create task';
        Alert.alert('Error', msg);
      } finally {
        setLoading(false);
