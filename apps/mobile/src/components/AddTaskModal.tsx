@@ -139,10 +139,10 @@ export const AddTaskModal = ({ visible, onClose, onSuccess }: AddTaskModalProps)
                 {loading ? (
                   <View style={{flexDirection: 'row', alignItems: 'center'}}>
                     <ActivityIndicator color={theme.colors.neutral.white} style={{marginRight: 8}}/>
-                    <Text style={styles.submitText}>Breaking into steps...</Text>
+                    <Text style={styles.submitText}>Saving task...</Text>
                   </View>
                 ) : (
-                  <Text style={styles.submitText}>Let AI break this down</Text>
+                  <Text style={styles.submitText}>Add Task</Text>
                 )}
              </TouchableOpacity>
            </Animated.View>

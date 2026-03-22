@@ -1,10 +1,10 @@
 import React, { useCallback, useState, useEffect, memo, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import LinearGradient from 'react-native-linear-gradient';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, withRepeat, withDelay, Easing } from 'react-native-reanimated';
-import { PlayCircle, FileText, CheckCircle, Flame, Plus, Lock, Clock, BookOpen } from 'lucide-react-native';
+import { PlayCircle, Flame, Clock, BookOpen, CheckCircle2 } from 'lucide-react-native';
 import { Linking } from 'react-native';
 
 import { theme } from '../../constants/theme';
@@ -40,6 +40,50 @@ interface DailyTaskCard {
   total_days: number;
   goal_title: string;
 }
+
+interface PersonalTask {
+  _id: string;
+  raw_input: string;
+  due_date?: string | null;
+  priority?: 'low' | 'medium' | 'high';
+  status: string;
+}
+
+const getTomorrowEnd = () => {
+  const tomorrowEnd = new Date();
+  tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
+  tomorrowEnd.setHours(23, 59, 59, 999);
+  return tomorrowEnd;
+};
+
+const formatTaskDueLabel = (dueDate?: string | null) => {
+  if (!dueDate) {
+    return 'No due date';
+  }
+
+  const due = new Date(dueDate);
+  const today = new Date();
+  const todayLabel = new Date();
+  todayLabel.setHours(0, 0, 0, 0);
+  const tomorrowLabel = new Date(todayLabel);
+  tomorrowLabel.setDate(tomorrowLabel.getDate() + 1);
+  const dueLabel = new Date(due);
+  dueLabel.setHours(0, 0, 0, 0);
+
+  if (dueLabel.getTime() < todayLabel.getTime()) {
+    return 'Overdue';
+  }
+
+  if (dueLabel.getTime() === todayLabel.getTime()) {
+    return 'Due today';
+  }
+
+  if (dueLabel.getTime() === tomorrowLabel.getTime()) {
+    return 'Due tomorrow';
+  }
+
+  return `Due ${due.toLocaleDateString()}`;
+};
 
 // --- Animated Shimmer Skeleton ---
 const Skeleton = memo(({ width, height, style, borderRadius = theme.borderRadius.sm }: any) => {
@@ -112,7 +156,13 @@ export const TodayScreen = () => {
   }, []);
 
   // Fetch Data
-  const { data: taskCard, isLoading, isError, refetch, isRefetching } = useQuery<DailyTaskCard>({
+  const {
+    data: taskCard,
+    isLoading: isGoalLoading,
+    isError: isGoalError,
+    refetch: refetchGoal,
+    isRefetching: isGoalRefetching,
+  } = useQuery<DailyTaskCard>({
     queryKey: ['todayTask', activeGoalId],
     queryFn: async () => {
       const res = await api.get(`/api/v1/goals/${activeGoalId}/today`);
@@ -122,6 +172,48 @@ export const TodayScreen = () => {
   });
 
   const primaryTopic = taskCard?.topics?.[0];
+
+  const {
+    data: allTasks = [],
+    isLoading: isTasksLoading,
+    isRefetching: isTasksRefetching,
+    refetch: refetchTasks,
+  } = useQuery<PersonalTask[]>({
+    queryKey: ['tasks', 'home-feed'],
+    queryFn: async () => {
+      const res = await api.get('/api/v1/tasks');
+      return res.data;
+    },
+  });
+
+  const personalTasks = useMemo(() => {
+    const tomorrowEnd = getTomorrowEnd();
+
+    return allTasks
+      .filter((task) => {
+        if (!task || task.status === 'done' || task.status === 'abandoned') {
+          return false;
+        }
+
+        if (!task.due_date) {
+          return false;
+        }
+
+        return new Date(task.due_date) <= tomorrowEnd;
+      })
+      .sort((a, b) => {
+        const aDue = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+        const bDue = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+        return aDue - bDue;
+      });
+  }, [allTasks]);
+
+  const refreshHome = useCallback(async () => {
+    await Promise.all([
+      refetchTasks(),
+      activeGoalId ? refetchGoal() : Promise.resolve(),
+    ]);
+  }, [activeGoalId, refetchGoal, refetchTasks]);
 
   // Mutations
   const completeMutation = useMutation({
@@ -137,6 +229,7 @@ export const TodayScreen = () => {
       queryClient.invalidateQueries({ queryKey: ['goals'] });
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
       queryClient.invalidateQueries({ queryKey: ['userStats'] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
     }
   });
 
@@ -166,6 +259,10 @@ export const TodayScreen = () => {
     if (supported) await Linking.openURL(url);
   }, []);
 
+  const handleOpenTask = useCallback((task: PersonalTask) => {
+    navigation.navigate('TaskDetailScreen', { taskId: task._id, task });
+  }, [navigation]);
+
   // Sub-renders
   const renderSkeleton = () => (
     <View style={styles.container}>
@@ -184,27 +281,7 @@ export const TodayScreen = () => {
     </View>
   );
 
-  const renderEmpty = () => (
-    <View style={styles.centerContainer}>
-      <Text style={styles.emptyText}>No active goal.</Text>
-      <TouchableOpacity style={styles.primaryButton} onPress={() => navigation.navigate('Goals')}>
-        <Text style={styles.primaryButtonText}>Add one in Goals →</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderError = () => (
-    <View style={styles.centerContainer}>
-      <Text style={styles.errorText}>Couldn't load your task.</Text>
-      <TouchableOpacity style={styles.secondaryButton} onPress={() => refetch()}>
-        <Text style={styles.secondaryButtonText}>Pull to refresh</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  if (!activeGoalId && !isLoading) return renderEmpty();
-  if (isLoading) return renderSkeleton();
-  if (isError || !taskCard) return renderError();
+  if (activeGoalId && isGoalLoading && isTasksLoading) return renderSkeleton();
 
   const confettiColors = [theme.colors.accent.coral, theme.colors.positive.sage, theme.colors.warning.amber, theme.colors.danger.rose];
 
@@ -212,7 +289,13 @@ export const TodayScreen = () => {
     <View style={styles.container}>
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.colors.accent.coral} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={isGoalRefetching || isTasksRefetching}
+            onRefresh={refreshHome}
+            tintColor={theme.colors.accent.coral}
+          />
+        }
       >
         {/* Header */}
         <View style={styles.headerRow}>
@@ -223,91 +306,154 @@ export const TodayScreen = () => {
           </View>
         </View>
 
-        {/* Phase Progress */}
-        <View style={styles.progressContainer}>
-          <View style={styles.progressTextRow}>
-            <Text style={styles.phaseTitleText}>{taskCard.phase_title || taskCard.goal_title || 'Today'}</Text>
-            <Text style={styles.dayIndexText}>Day {(taskCard.day_index || 0) + 1} of {taskCard.total_days || '—'}</Text>
-          </View>
-          <View style={styles.progressBarBg}>
-             <View style={[styles.progressBarFill, { width: `${Math.min(100, (((taskCard.day_index || 0) + 1) / Math.max(taskCard.total_days || 1, 1)) * 100)}%` }]} />
-          </View>
-        </View>
-
-        {/* Hero Card */}
-        <View style={styles.heroCard}>
-          {/* Confetti Animation Layer */}
-          <View style={{ position: 'absolute', top: '50%', left: '50%', zIndex: 100 }} pointerEvents="none">
-             {Array.from({ length: 20 }).map((_, i) => (
-               <ConfettiParticle 
-                 key={i} 
-                 active={confettiActive} 
-                 color={confettiColors[i % confettiColors.length]} 
-                 angle={(Math.PI * 2 * i) / 20} 
-                 distance={80 + Math.random() * 60} 
-                 delay={Math.random() * 100}
-               />
-             ))}
-          </View>
-
-          <LinearGradient
-            colors={[theme.colors.accent.coral, theme.colors.primary.ink]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.heroGradientHeader}
-          >
-            <Text style={styles.phaseLabel}>TODAY'S TASK • DAY {(taskCard.day_index || 0) + 1}</Text>
-            <Text style={styles.topicTitle}>{primaryTopic?.title || 'No Tasks Today'}</Text>
-            
-            <View style={styles.timeChip}>
-              <Clock color={theme.colors.primary.ink} size={12} />
-              <Text style={styles.timeChipText}>~{primaryTopic?.estimated_minutes || 0} min</Text>
-            </View>
-          </LinearGradient>
-
-          <View style={styles.heroBody}>
-            {primaryTopic?.ai_note && (
-              <Text style={styles.aiNote}>"{primaryTopic.ai_note}"</Text>
-            )}
-
-            {primaryTopic?.resources?.slice(0, 2).map((res, i) => (
-              <TouchableOpacity key={i} style={styles.resourceRow} onPress={() => handleOpenLink(res.url)}>
-                {res.type === 'video' ? <PlayCircle color={theme.colors.primary.inkMuted} size={18} /> : <BookOpen color={theme.colors.primary.inkMuted} size={18} />}
-                <Text style={styles.resourceText} numberOfLines={1}>{res.title}</Text>
-              </TouchableOpacity>
-            ))}
-
-            <TouchableOpacity 
-              style={[styles.doneButton, completeMutation.isPending && { opacity: 0.7 }]} 
-              onPress={handleMarkDone}
-              disabled={completeMutation.isPending || !primaryTopic?.topic_id}
-            >
-              <Text style={styles.doneButtonText}>{completeMutation.isPending ? 'Completing...' : 'Mark as Done ✓'}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.ghostButton} onPress={handleAskMentor}>
-              <Text style={styles.ghostButtonText}>Ask AI Mentor</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Adjusting load */}
-        <TouchableOpacity style={styles.tooMuchLink} onPress={() => setSimplifyModalVisible(true)}>
-          <Text style={styles.tooMuchText}>Too much today?</Text>
-        </TouchableOpacity>
-
-        {/* Task List Section */}
-        {taskCard.topics?.length > 1 && (
-          <View style={styles.tasksSection}>
-            <Text style={styles.sectionHeader}>Your Tasks Today ({taskCard.task_mode_count})</Text>
-            {taskCard.topics.slice(1).map((topic, i) => (
-              <View key={topic.topic_id || i} style={styles.secondaryTopicCard}>
-                 <Text style={styles.secondaryTopicTitle}>{topic.title}</Text>
-                 <Text style={styles.secondaryTopicMins}>{topic.estimated_minutes} min</Text>
+        {activeGoalId && taskCard && (
+          <>
+            <View style={styles.progressContainer}>
+              <View style={styles.progressTextRow}>
+                <Text style={styles.phaseTitleText}>{taskCard.phase_title || taskCard.goal_title || 'Today'}</Text>
+                <Text style={styles.dayIndexText}>Day {(taskCard.day_index || 0) + 1} of {taskCard.total_days || '—'}</Text>
               </View>
-            ))}
+              <View style={styles.progressBarBg}>
+                 <View style={[styles.progressBarFill, { width: `${Math.min(100, (((taskCard.day_index || 0) + 1) / Math.max(taskCard.total_days || 1, 1)) * 100)}%` }]} />
+              </View>
+            </View>
+
+            <View style={styles.heroCard}>
+              <View style={{ position: 'absolute', top: '50%', left: '50%', zIndex: 100 }} pointerEvents="none">
+                 {Array.from({ length: 20 }).map((_, i) => (
+                   <ConfettiParticle
+                     key={i}
+                     active={confettiActive}
+                     color={confettiColors[i % confettiColors.length]}
+                     angle={(Math.PI * 2 * i) / 20}
+                     distance={80 + Math.random() * 60}
+                     delay={Math.random() * 100}
+                   />
+                 ))}
+              </View>
+
+              <LinearGradient
+                colors={[theme.colors.accent.coral, theme.colors.primary.ink]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroGradientHeader}
+              >
+                <Text style={styles.phaseLabel}>TODAY'S TASK • DAY {(taskCard.day_index || 0) + 1}</Text>
+                <Text style={styles.topicTitle}>{primaryTopic?.title || 'No Tasks Today'}</Text>
+
+                <View style={styles.timeChip}>
+                  <Clock color={theme.colors.primary.ink} size={12} />
+                  <Text style={styles.timeChipText}>~{primaryTopic?.estimated_minutes || 0} min</Text>
+                </View>
+              </LinearGradient>
+
+              <View style={styles.heroBody}>
+                {primaryTopic?.ai_note && (
+                  <Text style={styles.aiNote}>"{primaryTopic.ai_note}"</Text>
+                )}
+
+                {primaryTopic?.resources?.slice(0, 2).map((res, i) => (
+                  <TouchableOpacity key={i} style={styles.resourceRow} onPress={() => handleOpenLink(res.url)}>
+                    {res.type === 'video' ? <PlayCircle color={theme.colors.primary.inkMuted} size={18} /> : <BookOpen color={theme.colors.primary.inkMuted} size={18} />}
+                    <Text style={styles.resourceText} numberOfLines={1}>{res.title}</Text>
+                  </TouchableOpacity>
+                ))}
+
+                <TouchableOpacity
+                  style={[styles.doneButton, completeMutation.isPending && { opacity: 0.7 }]}
+                  onPress={handleMarkDone}
+                  disabled={completeMutation.isPending || !primaryTopic?.topic_id}
+                >
+                  <Text style={styles.doneButtonText}>{completeMutation.isPending ? 'Completing...' : 'Mark as Done ✓'}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.ghostButton} onPress={handleAskMentor}>
+                  <Text style={styles.ghostButtonText}>Ask AI Mentor</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.tooMuchLink} onPress={() => setSimplifyModalVisible(true)}>
+              <Text style={styles.tooMuchText}>Too much today?</Text>
+            </TouchableOpacity>
+
+            {taskCard.topics?.length > 1 && (
+              <View style={styles.tasksSection}>
+                <Text style={styles.sectionHeader}>Goal Tasks Coming Up ({taskCard.task_mode_count})</Text>
+                {taskCard.topics.slice(1).map((topic, i) => (
+                  <View key={topic.topic_id || i} style={styles.secondaryTopicCard}>
+                     <Text style={styles.secondaryTopicTitle}>{topic.title}</Text>
+                     <Text style={styles.secondaryTopicMins}>{topic.estimated_minutes} min</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
+        )}
+
+        {!activeGoalId && (
+          <View style={styles.infoCard}>
+            <Text style={styles.infoCardTitle}>No active goal yet</Text>
+            <Text style={styles.infoCardBody}>
+              You can still work through your personal tasks here, and add a goal when you want Stride to plan the bigger roadmap.
+            </Text>
+            <TouchableOpacity style={styles.primaryButton} onPress={() => navigation.navigate('Goals')}>
+              <Text style={styles.primaryButtonText}>Open Goals</Text>
+            </TouchableOpacity>
           </View>
         )}
+
+        {activeGoalId && isGoalError && (
+          <View style={styles.infoCard}>
+            <Text style={styles.infoCardTitle}>Couldn't load today&apos;s goal task</Text>
+            <Text style={styles.infoCardBody}>
+              Your personal tasks are still below. Pull to refresh or retry the goal task section.
+            </Text>
+            <TouchableOpacity style={styles.secondaryButton} onPress={() => refetchGoal()}>
+              <Text style={styles.secondaryButtonText}>Retry Goal Task</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {activeGoalId && !isGoalLoading && !isGoalError && !taskCard && (
+          <View style={styles.infoCard}>
+            <Text style={styles.infoCardTitle}>No goal task ready right now</Text>
+            <Text style={styles.infoCardBody}>
+              Your roadmap is still there. Check back later or open the roadmap to review any topic in full detail.
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.tasksSection}>
+          <Text style={styles.sectionHeader}>Your Personal Tasks</Text>
+          <Text style={styles.sectionSubheader}>Incomplete tasks due today, tomorrow, or already overdue.</Text>
+
+          {personalTasks.length > 0 ? (
+            personalTasks.map((task) => (
+              <TouchableOpacity
+                key={task._id}
+                style={styles.personalTaskCard}
+                onPress={() => handleOpenTask(task)}
+                activeOpacity={0.85}
+              >
+                <View style={styles.personalTaskRow}>
+                  <View style={styles.personalTaskTitleWrap}>
+                    <Text style={styles.personalTaskTitle}>{task.raw_input}</Text>
+                    <Text style={styles.personalTaskMeta}>{formatTaskDueLabel(task.due_date)}</Text>
+                  </View>
+                  <CheckCircle2
+                    color={task.status === 'overdue' ? theme.colors.danger.rose : theme.colors.primary.inkMuted}
+                    size={20}
+                  />
+                </View>
+              </TouchableOpacity>
+            ))
+          ) : (
+            <View style={styles.infoCardAlt}>
+              <Text style={styles.infoCardAltText}>No personal tasks due today or tomorrow.</Text>
+            </View>
+          )}
+        </View>
       </ScrollView>
 
       {/* Toast Overlay */}
@@ -557,6 +703,41 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.fontSizes.xs,
     color: theme.colors.primary.inkMuted,
   },
+  sectionSubheader: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    color: theme.colors.primary.inkMuted,
+    marginTop: -theme.spacing[8],
+    marginBottom: theme.spacing[16],
+  },
+  personalTaskCard: {
+    backgroundColor: theme.colors.neutral.white,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.neutral.border,
+    padding: theme.spacing[16],
+    marginBottom: theme.spacing[10],
+  },
+  personalTaskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing[12],
+  },
+  personalTaskTitleWrap: {
+    flex: 1,
+  },
+  personalTaskTitle: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.base,
+    color: theme.colors.primary.ink,
+    fontWeight: theme.typography.fontWeights.semibold,
+    marginBottom: theme.spacing[4],
+  },
+  personalTaskMeta: {
+    fontFamily: theme.typography.fontMono,
+    fontSize: theme.typography.fontSizes.xs,
+    color: theme.colors.primary.inkMuted,
+  },
   toast: {
     position: 'absolute',
     top: 60,
@@ -613,6 +794,40 @@ const styles = StyleSheet.create({
     color: theme.colors.neutral.white,
     fontSize: theme.typography.fontSizes.md,
     fontWeight: theme.typography.fontWeights.semibold,
+  },
+  infoCard: {
+    backgroundColor: theme.colors.neutral.white,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.neutral.border,
+    padding: theme.spacing[20],
+    marginBottom: theme.spacing[20],
+  },
+  infoCardTitle: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.lg,
+    color: theme.colors.primary.ink,
+    fontWeight: theme.typography.fontWeights.semibold,
+    marginBottom: theme.spacing[8],
+  },
+  infoCardBody: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    color: theme.colors.primary.inkMuted,
+    lineHeight: 22,
+    marginBottom: theme.spacing[16],
+  },
+  infoCardAlt: {
+    backgroundColor: theme.colors.neutral.white,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.neutral.border,
+    padding: theme.spacing[16],
+  },
+  infoCardAltText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    color: theme.colors.primary.inkMuted,
   },
   secondaryButton: {
     backgroundColor: theme.colors.neutral.cream,

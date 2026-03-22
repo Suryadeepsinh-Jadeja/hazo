@@ -2,17 +2,17 @@
 tasks.py — task management endpoints for Stride.
 
 Endpoints:
-  POST   /                              create task with AI subtasks
+  POST   /                              create task
   GET    /                              list tasks (filterable)
   GET    /today                         tasks due today or overdue
+  GET    /{task_id}                     get task detail
+  PUT    /{task_id}                     update task
+  POST   /{task_id}/complete            mark task done
   POST   /{task_id}/subtasks/{subid}/complete
   DELETE /{task_id}                     soft-delete (abandoned)
 """
 
-import os
-import sys
 import logging
-import uuid
 from datetime import datetime, date, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
@@ -23,15 +23,7 @@ from pydantic import BaseModel
 
 from core.auth import get_current_user
 from db.database import get_tasks_col, get_skills_col
-from db.models import SubtaskDB, TaskDB, UserDB
-
-# Repo root → packages importable
-_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-if _REPO_ROOT not in sys.path:
-    sys.path.insert(0, _REPO_ROOT)
-
-from packages.ai.gemini_client import call_gemini_json
-from packages.ai.prompts import subtask_generation_prompt
+from db.models import UserDB
 
 load_dotenv()
 logger = logging.getLogger("stride.routers.tasks")
@@ -82,59 +74,15 @@ def _parse_iso_date(raw: Optional[str]) -> Optional[datetime]:
         )
 
 
-def _compute_due_hours(due_date: Optional[datetime]) -> int:
-    """Hours between now and due_date. Default 48 when not provided."""
-    if due_date is None:
-        return 48
-    now = datetime.utcnow()
-    diff = due_date - now
-    hours = int(diff.total_seconds() / 3600)
-    return max(1, hours)  # at least 1 h so the prompt makes sense
-
-
-# ---------------------------------------------------------------------------
-# POST /
-# ---------------------------------------------------------------------------
-
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_task(
     body: CreateTaskRequest,
     current_user: UserDB = Depends(get_current_user),
 ):
     """
-    Create a task with AI-generated subtasks.
-
-    Steps:
-      1. Parse due_date and compute due_hours
-      2. Call Gemini to break the task into 3–6 subtasks
-      3. Build TaskDB and insert to MongoDB
+    Create a simple task without AI-generated subtasks.
     """
     due_date_dt = _parse_iso_date(body.due_date)
-    due_hours = _compute_due_hours(due_date_dt)
-
-    # AI subtask generation
-    try:
-        ai_result = await call_gemini_json(
-            subtask_generation_prompt(body.raw_input, due_hours)
-        )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI subtask generation failed: {exc}",
-        )
-
-    estimated_total = ai_result.get("estimated_total_minutes", 30)
-    subtask_raw_list: List[dict] = ai_result.get("subtasks", [])
-
-    subtasks = [
-        SubtaskDB(
-            subtask_id=str(uuid.uuid4()),
-            title=s.get("title", "Subtask"),
-            estimated_minutes=int(s.get("estimated_minutes", 15)),
-            status="pending",
-        )
-        for s in subtask_raw_list
-    ]
 
     now = datetime.utcnow()
     task_doc: Dict[str, Any] = {
@@ -142,8 +90,8 @@ async def create_task(
         "raw_input": body.raw_input,
         "due_date": due_date_dt,
         "priority": body.priority or "medium",
-        "estimated_minutes": estimated_total,
-        "ai_subtasks": [s.model_dump() for s in subtasks],
+        "estimated_minutes": 30,
+        "ai_subtasks": [],
         "linked_goal_id": body.linked_goal_id,
         "status": "pending",
         "created_at": now,
@@ -181,6 +129,8 @@ async def list_tasks(
 
     if task_status:
         query["status"] = task_status
+    else:
+        query["status"] = {"$ne": "abandoned"}
 
     if due_today:
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -327,6 +277,43 @@ async def update_task(
         updated_task["status"] = "overdue"
 
     return _doc_to_dict(updated_task)
+
+
+# ---------------------------------------------------------------------------
+# POST /{task_id}/complete
+# ---------------------------------------------------------------------------
+
+@router.post("/{task_id}/complete")
+async def complete_task(
+    task_id: str,
+    current_user: UserDB = Depends(get_current_user),
+):
+    tasks_col = get_tasks_col()
+
+    try:
+        oid = ObjectId(task_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid task_id format.")
+
+    task_doc = await tasks_col.find_one({"_id": oid, "user_id": str(current_user.id)})
+    if task_doc is None:
+        raise HTTPException(status_code=404, detail="Task not found.")
+
+    if task_doc.get("status") == "done":
+        return {"task_status": "done"}
+
+    await tasks_col.update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "status": "done",
+                "completed_at": datetime.utcnow(),
+                "ai_subtasks": [],
+            }
+        },
+    )
+
+    return {"task_status": "done"}
 
 
 # ---------------------------------------------------------------------------

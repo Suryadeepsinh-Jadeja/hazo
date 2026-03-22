@@ -1,32 +1,42 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Platform } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import { ChevronLeft, Calendar, Trash2, CheckSquare, Square } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { Calendar, CheckCircle2, ChevronLeft, Trash2 } from 'lucide-react-native';
+import { useQueryClient } from '@tanstack/react-query';
+
 import api from '../../lib/api';
+import { theme } from '../../constants/theme';
 
 const MOCK_DETAIL = {
   _id: 'mock-1',
   raw_input: 'Read advanced routing patterns for Next.js',
   due_date: new Date().toISOString(),
   priority: 'high',
-  linked_goal_id: 'goal-1',
-  ai_subtasks: [
-    { subtask_id: 's1', title: 'Find official App Router docs', status: 'done' },
-    { subtask_id: 's2', title: 'Read Layouts & Templates section', status: 'pending' },
-    { subtask_id: 's3', title: 'Implement a small demo repository', status: 'pending' },
-  ],
+  status: 'pending',
 };
 
 export const TaskDetailScreen = () => {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
+  const queryClient = useQueryClient();
   const { taskId, task: initialTask } = route.params || {};
+  const resolvedTaskId = taskId || initialTask?._id;
 
   const [task, setTask] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [savingDone, setSavingDone] = useState(false);
 
   useEffect(() => {
     if (initialTask) {
@@ -36,52 +46,74 @@ export const TaskDetailScreen = () => {
     }
 
     fetchTask();
-  }, [initialTask, taskId]);
+  }, [initialTask, resolvedTaskId]);
 
   const fetchTask = async () => {
+    if (!resolvedTaskId) {
+      setTask(initialTask || MOCK_DETAIL);
+      setLoading(false);
+      return;
+    }
+
     try {
-      const res = await api.get(`/api/v1/tasks/${taskId}`);
+      const res = await api.get(`/api/v1/tasks/${resolvedTaskId}`);
       setTask(res.data);
     } catch {
-      setTask(MOCK_DETAIL);
+      setTask(initialTask || MOCK_DETAIL);
     } finally {
       setLoading(false);
     }
   };
 
   const updateTask = async (updates: any) => {
-    setTask({ ...task, ...updates });
-    try {
-      await api.put(`/api/v1/tasks/${taskId}`, updates);
-    } catch (e) {
-      console.warn('Silent sync error');
-    }
-  };
-
-  const toggleSubtask = async (subtaskId: string, currentStatus: string) => {
-    if (currentStatus === 'done') {
+    if (!resolvedTaskId) {
       return;
     }
 
-    const newSubtasks = task.ai_subtasks.map((s: any) => 
-      s.subtask_id === subtaskId ? { ...s, status: 'done' } : s
-    );
-    setTask({ ...task, ai_subtasks: newSubtasks });
-
+    const previousTask = task;
+    setTask((current: any) => ({ ...current, ...updates }));
     try {
-      await api.post(`/api/v1/tasks/${taskId}/subtasks/${subtaskId}/complete`);
+      await api.put(`/api/v1/tasks/${resolvedTaskId}`, updates);
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
     } catch {
-      setTask(task);
+      setTask(previousTask);
+    }
+  };
+
+  const handleMarkDone = async () => {
+    if (!task || task.status === 'done' || !resolvedTaskId) {
+      return;
+    }
+
+    setSavingDone(true);
+    const previousTask = task;
+    setTask({ ...task, status: 'done' });
+    try {
+      await api.post(`/api/v1/tasks/${resolvedTaskId}/complete`);
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    } catch {
+      setTask(previousTask);
+    } finally {
+      setSavingDone(false);
     }
   };
 
   const handleDelete = () => {
-    Alert.alert("Delete Task", "This cannot be undone. Delete this task?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: async () => {
-        try { await api.delete(`/api/v1/tasks/${taskId}`); } catch {}
-        navigation.goBack();
-      }}
+    Alert.alert('Delete Task', 'This cannot be undone. Delete this task?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            if (resolvedTaskId) {
+              await api.delete(`/api/v1/tasks/${resolvedTaskId}`);
+            }
+          } catch {}
+          queryClient.invalidateQueries({ queryKey: ['tasks'] });
+          navigation.goBack();
+        },
+      },
     ]);
   };
 
@@ -115,9 +147,6 @@ export const TaskDetailScreen = () => {
     );
   }
 
-  const completedCount = task.ai_subtasks?.filter((s:any) => s.status === 'done').length || 0;
-  const totalSubtasks = task.ai_subtasks?.length || 0;
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -139,14 +168,27 @@ export const TaskDetailScreen = () => {
 
         <View style={styles.metaRow}>
           <TouchableOpacity style={styles.datePickerBtn} onPress={openDatePicker}>
-             <Calendar color={theme.colors.primary.inkMuted} size={16} />
-             <Text style={styles.dateText}>{task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No due date'}</Text>
+            <Calendar color={theme.colors.primary.inkMuted} size={16} />
+            <Text style={styles.dateText}>
+              {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No due date'}
+            </Text>
           </TouchableOpacity>
 
           <View style={styles.priorityRow}>
-            {['low', 'medium', 'high'].map(p => (
-              <TouchableOpacity key={p} style={[styles.pChip, task.priority === p && styles.pChipActive]} onPress={() => updateTask({ priority: p })}>
-                <Text style={[styles.pChipText, task.priority === p && styles.pChipTextActive]}>{p.charAt(0).toUpperCase() + p.slice(1)}</Text>
+            {['low', 'medium', 'high'].map((priority) => (
+              <TouchableOpacity
+                key={priority}
+                style={[styles.pChip, task.priority === priority && styles.pChipActive]}
+                onPress={() => updateTask({ priority })}
+              >
+                <Text
+                  style={[
+                    styles.pChipText,
+                    task.priority === priority && styles.pChipTextActive,
+                  ]}
+                >
+                  {priority.charAt(0).toUpperCase() + priority.slice(1)}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -161,39 +203,36 @@ export const TaskDetailScreen = () => {
           />
         )}
 
-        <View style={styles.subtasksSection}>
-          <View style={styles.subtasksHeaderRow}>
-            <Text style={styles.sectionTitle}>AI Subtasks</Text>
-            {totalSubtasks > 0 && (
-              <Text style={styles.progressText}>{completedCount}/{totalSubtasks} completed</Text>
-            )}
-          </View>
+        <View style={styles.statusSection}>
+          <Text style={styles.sectionTitle}>Status</Text>
+          <View style={styles.statusCard}>
+            <Text style={styles.statusLabel}>
+              {task.status === 'done' ? 'Completed' : 'Pending'}
+            </Text>
+            <Text style={styles.statusSubtext}>
+              {task.status === 'done'
+                ? 'This task is already marked done.'
+                : 'Keep it simple: one task, one finish line.'}
+            </Text>
 
-          {/* Progress Bar inside detail */}
-          {totalSubtasks > 0 && (
-            <View style={styles.progressBarBg}>
-               <View style={[styles.progressBarFill, { width: `${(completedCount / totalSubtasks) * 100}%` }]} />
-            </View>
-          )}
-
-          {task.ai_subtasks?.map((sub: any) => (
-            <TouchableOpacity key={sub.subtask_id} style={styles.subtaskRow} onPress={() => toggleSubtask(sub.subtask_id, sub.status)}>
-              {sub.status === 'done' ? (
-                <CheckSquare color={theme.colors.positive.sage} size={22} />
-              ) : (
-                <Square color={theme.colors.neutral.borderMid} size={22} />
-              )}
-              <Text style={[styles.subtaskText, sub.status === 'done' && styles.subtaskTextDone]}>{sub.title}</Text>
+            <TouchableOpacity
+              style={[styles.doneButton, task.status === 'done' && styles.doneButtonDisabled]}
+              onPress={handleMarkDone}
+              disabled={task.status === 'done' || savingDone}
+            >
+              <CheckCircle2 color={theme.colors.neutral.white} size={18} />
+              <Text style={styles.doneButtonText}>
+                {savingDone ? 'Saving...' : task.status === 'done' ? 'Done' : 'Mark Done'}
+              </Text>
             </TouchableOpacity>
-          ))}
-
+          </View>
         </View>
       </ScrollView>
 
       <View style={styles.footer}>
         <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-           <Trash2 color={theme.colors.danger.rose} size={20} />
-           <Text style={styles.deleteButtonText}>Delete Task</Text>
+          <Trash2 color={theme.colors.danger.rose} size={20} />
+          <Text style={styles.deleteButtonText}>Delete Task</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -244,7 +283,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing[48],
+    marginBottom: theme.spacing[32],
     flexWrap: 'wrap',
     gap: theme.spacing[16],
   },
@@ -252,8 +291,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.colors.neutral.white,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: theme.spacing[16],
+    paddingVertical: theme.spacing[12],
     borderRadius: theme.borderRadius.sm,
     borderWidth: 1,
     borderColor: theme.colors.neutral.border,
@@ -262,15 +301,15 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.fontMono,
     fontSize: theme.typography.fontSizes.sm,
     color: theme.colors.primary.ink,
-    marginLeft: 8,
+    marginLeft: theme.spacing[8],
   },
   priorityRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: theme.spacing[8],
   },
   pChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: theme.spacing[12],
+    paddingVertical: theme.spacing[8],
     borderRadius: theme.borderRadius.full,
     borderWidth: 1,
     borderColor: theme.colors.neutral.border,
@@ -289,74 +328,54 @@ const styles = StyleSheet.create({
     color: theme.colors.neutral.white,
     fontWeight: theme.typography.fontWeights.medium,
   },
-  subtasksSection: {
-    backgroundColor: theme.colors.neutral.white,
-    padding: theme.spacing[20],
-    borderRadius: theme.borderRadius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.neutral.border,
-  },
-  subtasksHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginBottom: theme.spacing[12],
+  statusSection: {
+    marginTop: theme.spacing[8],
   },
   sectionTitle: {
     fontFamily: theme.typography.fontBody,
     fontSize: theme.typography.fontSizes.lg,
     fontWeight: theme.typography.fontWeights.semibold,
     color: theme.colors.primary.ink,
+    marginBottom: theme.spacing[12],
   },
-  progressText: {
-    fontFamily: theme.typography.fontMono,
-    fontSize: theme.typography.fontSizes.xs,
-    color: theme.colors.primary.inkMuted,
-  },
-  progressBarBg: {
-    height: 4,
-    backgroundColor: theme.colors.neutral.border,
-    borderRadius: 2,
-    marginBottom: theme.spacing[20],
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: theme.colors.positive.sage,
-  },
-  subtaskRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: theme.spacing[16],
-  },
-  subtaskText: {
-    fontFamily: theme.typography.fontBody,
-    fontSize: theme.typography.fontSizes.base,
-    color: theme.colors.primary.ink,
-    flex: 1,
-    marginLeft: theme.spacing[12],
-    lineHeight: 22,
-  },
-  subtaskTextDone: {
-    textDecorationLine: 'line-through',
-    color: theme.colors.primary.inkMuted,
-  },
-  regenButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: theme.spacing[12],
+  statusCard: {
+    backgroundColor: theme.colors.neutral.white,
+    padding: theme.spacing[20],
+    borderRadius: theme.borderRadius.md,
     borderWidth: 1,
-    borderColor: theme.colors.neutral.borderMid,
-    borderStyle: 'dashed',
-    borderRadius: theme.borderRadius.sm,
-    marginTop: theme.spacing[8],
+    borderColor: theme.colors.neutral.border,
   },
-  regenText: {
+  statusLabel: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.md,
+    fontWeight: theme.typography.fontWeights.semibold,
+    color: theme.colors.primary.ink,
+  },
+  statusSubtext: {
     fontFamily: theme.typography.fontBody,
     fontSize: theme.typography.fontSizes.sm,
     color: theme.colors.primary.inkMuted,
-    marginLeft: 8,
+    marginTop: theme.spacing[8],
+    lineHeight: 20,
+  },
+  doneButton: {
+    marginTop: theme.spacing[16],
+    backgroundColor: theme.colors.primary.ink,
+    borderRadius: theme.borderRadius.sm,
+    paddingVertical: theme.spacing[16],
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: theme.spacing[8],
+  },
+  doneButtonDisabled: {
+    backgroundColor: theme.colors.primary.inkMuted,
+  },
+  doneButtonText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    color: theme.colors.neutral.white,
+    fontWeight: theme.typography.fontWeights.semibold,
   },
   footer: {
     position: 'absolute',
@@ -381,6 +400,6 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.fontSizes.md,
     color: theme.colors.danger.rose,
     fontWeight: theme.typography.fontWeights.semibold,
-    marginLeft: 8,
+    marginLeft: theme.spacing[8],
   },
 });

@@ -28,14 +28,7 @@ export const TasksScreen = () => {
   });
 
   const completeMutation = useMutation({
-    mutationFn: async (task: any) => {
-      const nextPendingSubtask = task.ai_subtasks?.find((subtask: any) => subtask.status !== 'done');
-      if (!nextPendingSubtask) {
-        return;
-      }
-
-      return api.post(`/api/v1/tasks/${task._id}/subtasks/${nextPendingSubtask.subtask_id}/complete`);
-    },
+    mutationFn: async (task: any) => api.post(`/api/v1/tasks/${task._id}/complete`),
     onSuccess: () => {
       ReactNativeHapticFeedback.trigger('impactHeavy');
     
@@ -82,8 +75,6 @@ export const TasksScreen = () => {
 
   const renderTask = ({ item }: { item: any }) => {
     const isDone = item.status === 'done';
-    const subtaskCount = item.ai_subtasks?.length || 0;
-    const completedSubtasks = item.ai_subtasks?.filter((s:any) => s.status === 'done').length || 0;
 
     return (
       <Swipeable
@@ -104,11 +95,6 @@ export const TasksScreen = () => {
             <Text style={[styles.taskTitle, isDone && styles.textStrikethrough]} numberOfLines={1}>
               {item.raw_input}
             </Text>
-            {subtaskCount > 0 && (
-              <View style={styles.progressChip}>
-                <Text style={styles.progressChipText}>{completedSubtasks}/{subtaskCount}</Text>
-              </View>
-            )}
           </View>
           <Text style={styles.taskDueDate}>{item.due_date ? String(item.due_date) : 'No due date'}</Text>
         </TouchableOpacity>
@@ -286,18 +272,6 @@ const styles = StyleSheet.create({
   },
   textStrikethrough: {
     textDecorationLine: 'line-through',
-    color: theme.colors.primary.inkMuted,
-  },
-  progressChip: {
-    backgroundColor: theme.colors.neutral.cream,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginLeft: theme.spacing[8],
-  },
-  progressChipText: {
-    fontFamily: theme.typography.fontMono,
-    fontSize: 10,
     color: theme.colors.primary.inkMuted,
   },
   taskDueDate: {
