@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Alert, View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { FileText, PlayCircle, Code, Newspaper, BookOpen, ExternalLink } from 'lucide-react-native';
 import { Linking } from 'react-native';
 import { theme } from '../constants/theme';
@@ -19,14 +19,37 @@ export interface ResourceCardProps {
   onPress?: () => void;
 }
 
+const normalizeUrl = (rawUrl: string) => {
+  if (!rawUrl) {
+    return '';
+  }
+
+  const trimmed = rawUrl.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return `https://${trimmed}`;
+};
+
 export const ResourceCard = ({ resource, onPress }: ResourceCardProps) => {
 
   const handlePress = async () => {
     if (onPress) {
       onPress();
     } else {
-      const supported = await Linking.canOpenURL(resource.url);
-      if (supported) await Linking.openURL(resource.url);
+      const url = normalizeUrl(resource.url);
+
+      if (!url) {
+        Alert.alert('Link unavailable', 'This material does not have a valid link yet.');
+        return;
+      }
+
+      try {
+        await Linking.openURL(url);
+      } catch {
+        Alert.alert('Could not open link', 'This material link could not be opened on your device.');
+      }
     }
   };
 

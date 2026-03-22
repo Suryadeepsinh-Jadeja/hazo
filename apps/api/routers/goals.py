@@ -28,7 +28,7 @@ import httpx
 import redis.asyncio as aioredis
 from bson import ObjectId
 from dotenv import load_dotenv
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
@@ -337,7 +337,7 @@ async def _curate_resources_for_topic(
     topic_title: str,
     domain: str,
     budget: str,
-) -> List[dict]:
+) -> Dict[str, List[dict]]:
     try:
         resources_raw = await call_gemini_json(
             resource_curation_prompt(topic_title, domain, budget)
@@ -348,30 +348,156 @@ async def _curate_resources_for_topic(
         logger.warning("Resource curation failed for %s: %s", topic_title, exc)
         resources_raw = []
 
-    verified: List[dict] = []
     async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as client:
-        for resource in resources_raw:
-            url = resource.get("url", "")
-            is_broken = False
-            if url:
-                try:
-                    response = await client.head(url)
-                    is_broken = response.status_code >= 400
-                except Exception:
-                    is_broken = True
+        return await _verify_and_split_resources(
+            client=client,
+            resources_raw=resources_raw,
+            topic_title=topic_title,
+            domain=domain,
+        )
 
-            verified.append({
-                "resource_id": str(uuid.uuid4()),
-                "type": resource.get("type", "article"),
-                "title": resource.get("title", ""),
-                "url": url,
-                "source": _map_source(url),
-                "is_free": resource.get("is_free", True),
-                "is_broken": is_broken,
-                "verified_at": datetime.utcnow().isoformat(),
-            })
 
-    return verified
+_TRUSTED_CODING_PRACTICE_DOMAINS = (
+    "leetcode.com",
+    "codechef.com",
+    "codeforces.com",
+    "cses.fi",
+    "atcoder.jp",
+)
+
+_CODING_TOPIC_KEYWORDS = (
+    "array",
+    "string",
+    "sorting",
+    "sort",
+    "hash",
+    "linked list",
+    "stack",
+    "queue",
+    "tree",
+    "graph",
+    "dynamic programming",
+    "dp",
+    "greedy",
+    "recursion",
+    "backtracking",
+    "binary search",
+    "heap",
+    "trie",
+    "segment tree",
+    "disjoint set",
+    "union find",
+    "two pointers",
+    "sliding window",
+    "bit manipulation",
+    "math",
+    "algorithm",
+    "dsa",
+    "leetcode",
+)
+
+
+def _normalise_url(raw_url: str) -> str:
+    url = (raw_url or "").strip()
+    if not url:
+        return ""
+    if re.match(r"^[a-z][a-z0-9+.-]*://", url, re.IGNORECASE):
+        return url
+    return f"https://{url}"
+
+
+def _is_trusted_coding_practice_url(url: str) -> bool:
+    url_lower = url.lower()
+    return any(domain in url_lower for domain in _TRUSTED_CODING_PRACTICE_DOMAINS)
+
+
+def _topic_prefers_coding_practice(domain: str, topic_title: str) -> bool:
+    if domain == "competitive_programming":
+        return True
+    if domain != "swe_career":
+        return False
+
+    title_lower = topic_title.lower()
+    return any(keyword in title_lower for keyword in _CODING_TOPIC_KEYWORDS)
+
+
+async def _is_resource_url_alive(client: httpx.AsyncClient, url: str) -> bool:
+    if not url:
+        return False
+
+    url_lower = url.lower()
+
+    try:
+        if "youtube.com" in url_lower or "youtu.be" in url_lower:
+            oembed_url = "https://www.youtube.com/oembed"
+            response = await client.get(
+                oembed_url,
+                params={"url": url, "format": "json"},
+            )
+            return response.status_code < 400
+
+        response = await client.head(url)
+        if response.status_code < 400:
+            return True
+        if response.status_code in {403, 405}:
+            response = await client.get(url)
+            return response.status_code < 400
+        return False
+    except Exception:
+        try:
+            response = await client.get(url)
+            return response.status_code < 400
+        except Exception:
+            return False
+
+
+async def _verify_and_split_resources(
+    client: httpx.AsyncClient,
+    resources_raw: List[dict],
+    topic_title: str,
+    domain: str,
+) -> Dict[str, List[dict]]:
+    verified_resources: List[dict] = []
+    practice_links: List[dict] = []
+    seen_urls: set[str] = set()
+    prefers_coding_practice = _topic_prefers_coding_practice(domain, topic_title)
+
+    for resource in resources_raw:
+        url = _normalise_url(resource.get("url", ""))
+        if not url or url in seen_urls:
+            continue
+
+        resource_type = _normalise_resource_type(resource.get("type", "article"))
+        is_practice = resource_type == "problem"
+
+        if prefers_coding_practice and is_practice and not _is_trusted_coding_practice_url(url):
+            continue
+
+        is_alive = await _is_resource_url_alive(client, url)
+        if not is_alive:
+            continue
+
+        seen_urls.add(url)
+        verified_resource = {
+            "resource_id": str(uuid.uuid4()),
+            "type": resource_type,
+            "title": resource.get("title", ""),
+            "url": url,
+            "source": _map_source(url),
+            "is_free": resource.get("is_free", True),
+            "is_broken": False,
+            "verified_at": datetime.utcnow().isoformat(),
+        }
+
+        if is_practice:
+            practice_links.append(verified_resource)
+        else:
+            verified_resources.append(verified_resource)
+
+    return {
+        "resources": verified_resources[:4],
+        "practice_links": practice_links[:3],
+    }
 
 
 def _find_topic_and_phase(goal_doc: dict, topic_id: str) -> tuple[Optional[dict], Optional[dict]]:
@@ -488,28 +614,15 @@ async def _generate_roadmap_background(
                 logger.warning("Resource curation failed for %s: %s", topic["title"], exc)
                 resources_raw = []
 
-            verified: List[dict] = []
             async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as client:
-                for r in resources_raw:
-                    url = r.get("url", "")
-                    is_broken = False
-                    if url:
-                        try:
-                            resp = await client.head(url)
-                            is_broken = resp.status_code >= 400
-                        except Exception:
-                            is_broken = True
-                    verified.append({
-                        "resource_id": str(uuid.uuid4()),
-                        "type": r.get("type", "article"),
-                        "title": r.get("title", ""),
-                        "url": url,
-                        "source": _map_source(url),
-                        "is_free": r.get("is_free", True),
-                        "is_broken": is_broken,
-                        "verified_at": datetime.utcnow().isoformat(),
-                    })
-            topic["resources"] = verified
+                verified_payload = await _verify_and_split_resources(
+                    client=client,
+                    resources_raw=resources_raw,
+                    topic_title=topic["title"],
+                    domain=domain,
+                )
+            topic["resources"] = verified_payload["resources"]
+            topic["practice_links"] = verified_payload["practice_links"]
             return topic
 
         # Process only the first topic (Day 0) to avoid exhausting free-tier Gemini limits.
@@ -543,6 +656,19 @@ async def _generate_roadmap_background(
                     )
                     for r in t.get("resources", [])
                 ]
+                practice_links_for_topic = [
+                    Resource(
+                        resource_id=r["resource_id"],
+                        type=_normalise_resource_type(r.get("type", "problem")),
+                        title=r.get("title", ""),
+                        url=r.get("url", ""),
+                        source=_normalise_source(r.get("source", "other")),
+                        is_free=r.get("is_free", True),
+                        is_broken=r.get("is_broken", False),
+                        verified_at=datetime.utcnow(),
+                    )
+                    for r in t.get("practice_links", [])
+                ]
                 topics_embed.append(
                     Topic(
                         topic_id=t.get("topic_id", str(uuid.uuid4())),
@@ -552,6 +678,7 @@ async def _generate_roadmap_background(
                         ai_note=t.get("ai_note", ""),
                         resource_queries=t.get("resource_queries", []),
                         resources=resources_for_topic,
+                        practice_links=practice_links_for_topic,
                         status="pending",
                     )
                 )
@@ -656,6 +783,16 @@ def _map_source(url: str) -> str:
         return "youtube"
     if "leetcode" in url_lower:
         return "leetcode"
+    if "codechef" in url_lower:
+        return "codechef"
+    if "codeforces" in url_lower:
+        return "codeforces"
+    if "cses.fi" in url_lower:
+        return "cses"
+    if "atcoder.jp" in url_lower:
+        return "atcoder"
+    if "geeksforgeeks" in url_lower:
+        return "geeksforgeeks"
     if "github" in url_lower:
         return "github"
     if "udemy" in url_lower:
@@ -682,7 +819,14 @@ def _normalise_source(raw: str) -> str:
     mapping = {
         "youtube": "youtube",
         "youtube / abdul bari": "youtube",
+        "youtube / neetcode": "youtube",
+        "youtube / striver": "youtube",
         "leetcode": "leetcode",
+        "codechef": "codechef",
+        "codeforces": "codeforces",
+        "cses": "cses",
+        "atcoder": "atcoder",
+        "geeksforgeeks": "geeksforgeeks",
         "github": "github",
         "udemy": "udemy",
     }
@@ -1061,13 +1205,14 @@ async def complete_topic(
     # Prepare the next topic's links immediately so the user can inspect it
     # without waiting for the nightly resource hydration job.
     if next_topic_ref is not None and not next_topic_ref.get("resources"):
-        generated_resources = await _curate_resources_for_topic(
+        generated_payload = await _curate_resources_for_topic(
             next_topic_ref.get("title", ""),
             goal_doc.get("domain", "other"),
             goal_doc.get("intake", {}).get("budget", "free"),
         )
-        if generated_resources:
-            next_topic_ref["resources"] = generated_resources
+        if generated_payload["resources"] or generated_payload["practice_links"]:
+            next_topic_ref["resources"] = generated_payload["resources"]
+            next_topic_ref["practice_links"] = generated_payload["practice_links"]
             await goals_col.update_one(
                 {"_id": oid},
                 {"$set": {"phases": goal_doc["phases"], "updated_at": datetime.utcnow()}},
@@ -1127,6 +1272,7 @@ async def skip_topic(
 async def prepare_topic_resources(
     goal_id: str,
     topic_id: str,
+    force: bool = Query(False),
     current_user: UserDB = Depends(get_current_user),
 ):
     goals_col = get_goals_col()
@@ -1143,19 +1289,21 @@ async def prepare_topic_resources(
     if topic_doc is None:
         raise HTTPException(status_code=404, detail="Topic not found in this goal.")
 
-    if topic_doc.get("resources"):
+    has_existing_materials = bool(topic_doc.get("resources")) or bool(topic_doc.get("practice_links"))
+    if has_existing_materials and not force:
         return {
             "topic": topic_doc,
             "phase_title": phase_doc.get("title", "") if phase_doc else "",
             "goal_title": goal_doc.get("title", ""),
         }
 
-    generated_resources = await _curate_resources_for_topic(
+    generated_payload = await _curate_resources_for_topic(
         topic_doc.get("title", ""),
         goal_doc.get("domain", "other"),
         goal_doc.get("intake", {}).get("budget", "free"),
     )
-    topic_doc["resources"] = generated_resources
+    topic_doc["resources"] = generated_payload["resources"]
+    topic_doc["practice_links"] = generated_payload["practice_links"]
 
     await goals_col.update_one(
         {"_id": oid},

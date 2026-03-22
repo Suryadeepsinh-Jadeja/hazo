@@ -45,7 +45,18 @@ class Resource(BaseModel):
     type: Literal["video", "article", "notes", "problem", "course"]
     title: str
     url: str
-    source: Literal["youtube", "leetcode", "github", "udemy", "other"]
+    source: Literal[
+        "youtube",
+        "leetcode",
+        "codechef",
+        "codeforces",
+        "cses",
+        "atcoder",
+        "geeksforgeeks",
+        "github",
+        "udemy",
+        "other",
+    ]
     is_free: bool
     verified_at: Optional[datetime] = None
     is_broken: bool = False

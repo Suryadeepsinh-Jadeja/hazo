@@ -76,7 +76,7 @@ export const RoadmapScreen = () => {
           <ChevronLeft color={theme.colors.primary.ink} size={28} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{roadmap.title}</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('SkillsScreen', { goalId })}>
+        <TouchableOpacity style={styles.headerActionButton} onPress={() => navigation.navigate('SkillsScreen', { goalId })}>
           <Text style={styles.headerAction}>Skills Graph</Text>
         </TouchableOpacity>
       </View>
@@ -160,15 +160,22 @@ const styles = StyleSheet.create({
   },
   backButton: {
     padding: theme.spacing[4],
+    width: 36,
+    alignItems: 'flex-start',
   },
   headerTitle: {
     flex: 1,
+    minWidth: 0,
     fontFamily: theme.typography.fontBody,
     fontSize: theme.typography.fontSizes.md,
     fontWeight: theme.typography.fontWeights.semibold,
     color: theme.colors.primary.ink,
     textAlign: 'center',
     marginHorizontal: theme.spacing[8],
+  },
+  headerActionButton: {
+    minWidth: 92,
+    alignItems: 'flex-end',
   },
   headerAction: {
     fontFamily: theme.typography.fontBody,
@@ -199,8 +206,13 @@ const styles = StyleSheet.create({
   phaseHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
+    marginRight: theme.spacing[12],
   },
   phaseTitle: {
+    flex: 1,
+    flexShrink: 1,
     fontFamily: theme.typography.fontDisplay,
     fontSize: theme.typography.fontSizes.md,
     color: theme.colors.primary.ink,
@@ -211,6 +223,8 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.fontMono,
     fontSize: theme.typography.fontSizes.sm,
     color: theme.colors.primary.inkMuted,
+    flexShrink: 0,
+    textAlign: 'right',
   },
   topicsList: {
     marginTop: theme.spacing[16],

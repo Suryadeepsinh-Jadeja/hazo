@@ -298,9 +298,16 @@ Budget: {budget}
 ── DOMAIN-SPECIFIC PREFERENCES ─────────────────────────────
 
 competitive_programming:
-  - MUST include at least 1 LeetCode problem slug (e.g. "two-sum").
-  - Prefer Abdul Bari, NeetCode, or Striver video explanations.
-  - Include Codeforces / CSES links when applicable.
+  - MUST include 1-2 practice links from trusted coding platforms only:
+    LeetCode, CodeChef, Codeforces, CSES, or AtCoder.
+  - Prefer Abdul Bari, NeetCode, or Striver video explanations for concept learning.
+  - Never use random blogs or obscure judge platforms for practice.
+
+swe_career:
+  - For DSA / interview-prep topics, MUST include 1-2 practice links from:
+    LeetCode, CodeChef, Codeforces, CSES, or AtCoder.
+  - Prefer NeetCode, Striver, or Abdul Bari for concept videos.
+  - For system design or behavioural topics, prefer high-quality articles/videos instead of coding judges.
 
 academic_exam:
   - Prefer NPTEL lectures, official syllabus PDFs, university materials.
@@ -331,6 +338,17 @@ entrepreneurship:
 Only include URLs you are CERTAIN exist as of late 2025.
 If you are not sure a URL is valid, OMIT IT entirely.
 It is better to return 2 solid resources than 4 with broken links.
+
+For coding practice resources:
+- ONLY use these domains: leetcode.com, codechef.com, codeforces.com, cses.fi, atcoder.jp
+- Mark those as type = "practice"
+- Do not include search pages, homepages, contest listing pages, or generic tag pages
+- Prefer direct problem URLs that a learner can solve immediately
+
+For YouTube:
+- Only use direct watch URLs that you are highly confident are active
+- Prefer established channels like NeetCode, Striver, Abdul Bari, freeCodeCamp
+- If you are unsure about a video URL, omit it instead of guessing
 
 ── OUTPUT FORMAT ────────────────────────────────────────────
 

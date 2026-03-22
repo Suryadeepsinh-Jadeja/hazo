@@ -90,7 +90,15 @@ export const TopicDetailScreen = () => {
 
     setPreparing(true);
     try {
-      const response = await api.post(`/api/v1/goals/${goalId}/topics/${topicId}/prepare`);
+      const response = await api.post(
+        `/api/v1/goals/${goalId}/topics/${topicId}/prepare`,
+        null,
+        {
+          params: {
+            force: hasPreparedResources,
+          },
+        }
+      );
       setTopic(response.data.topic);
       setPhaseTitle(response.data.phase_title || phaseTitle);
       setGoalTitle(response.data.goal_title || goalTitle);
@@ -125,8 +133,9 @@ export const TopicDetailScreen = () => {
     );
   }
 
-  const materialCount = (topic.resources?.length || 0) + (topic.practice_links?.length || 0);
-  const hasPreparedResources = materialCount > 0;
+  const materialCount = topic.resources?.length || 0;
+  const practiceCount = topic.practice_links?.length || 0;
+  const hasPreparedResources = materialCount + practiceCount > 0;
 
   return (
     <View style={styles.container}>
@@ -183,29 +192,25 @@ export const TopicDetailScreen = () => {
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Materials</Text>
-            {!hasPreparedResources && (
-              <TouchableOpacity
-                style={styles.prepareButton}
-                onPress={handlePrepareNow}
-                disabled={preparing}
-              >
-                <Sparkles color={theme.colors.neutral.white} size={14} />
-                <Text style={styles.prepareButtonText}>
-                  {preparing ? 'Preparing...' : 'Prepare Now'}
-                </Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={styles.prepareButton}
+              onPress={handlePrepareNow}
+              disabled={preparing}
+            >
+              <Sparkles color={theme.colors.neutral.white} size={14} />
+              <Text style={styles.prepareButtonText}>
+                {preparing
+                  ? 'Refreshing...'
+                  : hasPreparedResources
+                    ? 'Refresh Links'
+                    : 'Prepare Now'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          {hasPreparedResources ? (
+          {materialCount > 0 ? (
             <>
               {topic.resources?.map((resource) => (
-                <ResourceCard
-                  key={resource.resource_id || `${resource.url}-${resource.title}`}
-                  resource={resource}
-                />
-              ))}
-              {topic.practice_links?.map((resource) => (
                 <ResourceCard
                   key={resource.resource_id || `${resource.url}-${resource.title}`}
                   resource={resource}
@@ -214,13 +219,29 @@ export const TopicDetailScreen = () => {
             </>
           ) : (
             <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>Links are not prepared yet</Text>
+              <Text style={styles.emptyTitle}>
+                {hasPreparedResources ? 'No concept materials yet' : 'Links are not prepared yet'}
+              </Text>
               <Text style={styles.emptyBody}>
-                You can prepare resources now, or use the search prompts below while Stride catches up.
+                {hasPreparedResources
+                  ? 'Try refreshing to fetch better explainers, or jump into the practice links below.'
+                  : 'You can prepare resources now, or use the search prompts below while Stride catches up.'}
               </Text>
             </View>
           )}
         </View>
+
+        {practiceCount > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Practice</Text>
+            {topic.practice_links?.map((resource) => (
+              <ResourceCard
+                key={resource.resource_id || `${resource.url}-${resource.title}-practice`}
+                resource={resource}
+              />
+            ))}
+          </View>
+        )}
 
         {!!topic.resource_queries?.length && (
           <View style={styles.section}>
