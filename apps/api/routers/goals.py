@@ -333,6 +333,55 @@ def _compute_streak(
     return {"streak_count": streak, "longest_streak": longest}
 
 
+async def _curate_resources_for_topic(
+    topic_title: str,
+    domain: str,
+    budget: str,
+) -> List[dict]:
+    try:
+        resources_raw = await call_gemini_json(
+            resource_curation_prompt(topic_title, domain, budget)
+        )
+        if not isinstance(resources_raw, list):
+            resources_raw = []
+    except Exception as exc:
+        logger.warning("Resource curation failed for %s: %s", topic_title, exc)
+        resources_raw = []
+
+    verified: List[dict] = []
+    async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as client:
+        for resource in resources_raw:
+            url = resource.get("url", "")
+            is_broken = False
+            if url:
+                try:
+                    response = await client.head(url)
+                    is_broken = response.status_code >= 400
+                except Exception:
+                    is_broken = True
+
+            verified.append({
+                "resource_id": str(uuid.uuid4()),
+                "type": resource.get("type", "article"),
+                "title": resource.get("title", ""),
+                "url": url,
+                "source": _map_source(url),
+                "is_free": resource.get("is_free", True),
+                "is_broken": is_broken,
+                "verified_at": datetime.utcnow().isoformat(),
+            })
+
+    return verified
+
+
+def _find_topic_and_phase(goal_doc: dict, topic_id: str) -> tuple[Optional[dict], Optional[dict]]:
+    for phase in goal_doc.get("phases", []):
+        for topic in phase.get("topics", []):
+            if topic.get("topic_id") == topic_id:
+                return topic, phase
+    return None, None
+
+
 # ---------------------------------------------------------------------------
 # Request / response schemas
 # ---------------------------------------------------------------------------
@@ -996,6 +1045,7 @@ async def complete_topic(
 
     # ── Find next topic title ──────────────────────────────────────────────
     next_topic_title: Optional[str] = None
+    next_topic_ref: Optional[dict] = None
     for phase in goal_doc.get("phases", []):
         for topic in phase.get("topics", []):
             if topic.get("day_index") == new_day_index and topic.get("status") in (
@@ -1003,9 +1053,25 @@ async def complete_topic(
                 "in_progress",
             ):
                 next_topic_title = topic["title"]
+                next_topic_ref = topic
                 break
         if next_topic_title:
             break
+
+    # Prepare the next topic's links immediately so the user can inspect it
+    # without waiting for the nightly resource hydration job.
+    if next_topic_ref is not None and not next_topic_ref.get("resources"):
+        generated_resources = await _curate_resources_for_topic(
+            next_topic_ref.get("title", ""),
+            goal_doc.get("domain", "other"),
+            goal_doc.get("intake", {}).get("budget", "free"),
+        )
+        if generated_resources:
+            next_topic_ref["resources"] = generated_resources
+            await goals_col.update_one(
+                {"_id": oid},
+                {"$set": {"phases": goal_doc["phases"], "updated_at": datetime.utcnow()}},
+            )
 
     return TopicCompleteResponse(
         streak_count=streak_data["streak_count"],
@@ -1055,6 +1121,52 @@ async def skip_topic(
     await _del_redis(f"daily:task:{current_user.id}:{goal_id}")
 
     return {"message": "ok"}
+
+
+@router.post("/{goal_id}/topics/{topic_id}/prepare")
+async def prepare_topic_resources(
+    goal_id: str,
+    topic_id: str,
+    current_user: UserDB = Depends(get_current_user),
+):
+    goals_col = get_goals_col()
+    try:
+        oid = ObjectId(goal_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid goal_id format.")
+
+    goal_doc = await goals_col.find_one({"_id": oid, "user_id": str(current_user.id)})
+    if goal_doc is None:
+        raise HTTPException(status_code=404, detail="Goal not found.")
+
+    topic_doc, phase_doc = _find_topic_and_phase(goal_doc, topic_id)
+    if topic_doc is None:
+        raise HTTPException(status_code=404, detail="Topic not found in this goal.")
+
+    if topic_doc.get("resources"):
+        return {
+            "topic": topic_doc,
+            "phase_title": phase_doc.get("title", "") if phase_doc else "",
+            "goal_title": goal_doc.get("title", ""),
+        }
+
+    generated_resources = await _curate_resources_for_topic(
+        topic_doc.get("title", ""),
+        goal_doc.get("domain", "other"),
+        goal_doc.get("intake", {}).get("budget", "free"),
+    )
+    topic_doc["resources"] = generated_resources
+
+    await goals_col.update_one(
+        {"_id": oid},
+        {"$set": {"phases": goal_doc["phases"], "updated_at": datetime.utcnow()}},
+    )
+
+    return {
+        "topic": topic_doc,
+        "phase_title": phase_doc.get("title", "") if phase_doc else "",
+        "goal_title": goal_doc.get("title", ""),
+    }
 
 
 # ── POST /{goal_id}/replan ────────────────────────────────────────────────

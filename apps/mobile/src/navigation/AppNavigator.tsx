@@ -17,6 +17,7 @@ import { MentorScreen } from '../screens/app/MentorScreen';
 import { SkillsScreen } from '../screens/app/SkillsScreen';
 import { RoomFeedScreen } from '../screens/app/RoomFeedScreen';
 import { CommunityScreen } from '../screens/app/CommunityScreen';
+import { TopicDetailScreen } from '../screens/app/TopicDetailScreen';
 import { OnboardingStack } from './OnboardingStack';
 
 const Tab = createBottomTabNavigator();
@@ -117,6 +118,7 @@ export const AppNavigator = () => {
       <Stack.Screen name="OnboardingStack" component={OnboardingStack} />
       <Stack.Screen name="RoadmapScreen" component={RoadmapScreen} />
       <Stack.Screen name="TaskDetailScreen" component={TaskDetailScreen} />
+      <Stack.Screen name="TopicDetailScreen" component={TopicDetailScreen} />
       <Stack.Screen name="Mentor" component={MentorScreen} />
       <Stack.Screen name="MentorScreen" component={MentorScreen} />
       <Stack.Screen name="SkillsScreen" component={SkillsScreen} />

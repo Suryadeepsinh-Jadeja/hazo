@@ -1,0 +1,427 @@
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { ChevronLeft, Clock, Sparkles } from 'lucide-react-native';
+
+import api from '../../lib/api';
+import { ResourceCard } from '../../components/ResourceCard';
+import { theme } from '../../constants/theme';
+
+interface TopicResource {
+  resource_id?: string;
+  type: string;
+  title: string;
+  url: string;
+  source: string;
+  is_free: boolean;
+}
+
+interface TopicDetail {
+  topic_id: string;
+  title: string;
+  day_index: number;
+  estimated_minutes: number;
+  ai_note?: string;
+  resource_queries?: string[];
+  resources?: TopicResource[];
+  practice_links?: TopicResource[];
+  status: string;
+  completed_at?: string;
+}
+
+export const TopicDetailScreen = () => {
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const { goalId, topicId } = route.params || {};
+
+  const [goalTitle, setGoalTitle] = useState('');
+  const [phaseTitle, setPhaseTitle] = useState('');
+  const [topic, setTopic] = useState<TopicDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [preparing, setPreparing] = useState(false);
+
+  const loadTopic = async () => {
+    if (!goalId || !topicId) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const response = await api.get(`/api/v1/goals/${goalId}`);
+      const goal = response.data;
+      setGoalTitle(goal.title || '');
+
+      let matchedTopic: TopicDetail | null = null;
+      let matchedPhaseTitle = '';
+      for (const phase of goal.phases || []) {
+        const candidate = phase.topics?.find((item: TopicDetail) => item.topic_id === topicId);
+        if (candidate) {
+          matchedTopic = candidate;
+          matchedPhaseTitle = phase.title || '';
+          break;
+        }
+      }
+
+      setTopic(matchedTopic);
+      setPhaseTitle(matchedPhaseTitle);
+    } catch (error) {
+      console.warn('Failed to load topic details:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTopic();
+  }, [goalId, topicId]);
+
+  const handlePrepareNow = async () => {
+    if (!goalId || !topicId) {
+      return;
+    }
+
+    setPreparing(true);
+    try {
+      const response = await api.post(`/api/v1/goals/${goalId}/topics/${topicId}/prepare`);
+      setTopic(response.data.topic);
+      setPhaseTitle(response.data.phase_title || phaseTitle);
+      setGoalTitle(response.data.goal_title || goalTitle);
+    } catch (error) {
+      console.warn('Failed to prepare topic resources:', error);
+    } finally {
+      setPreparing(false);
+    }
+  };
+
+  const openSearchQuery = async (query: string) => {
+    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    const supported = await Linking.canOpenURL(url);
+    if (supported) {
+      await Linking.openURL(url);
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator color={theme.colors.accent.coral} />
+      </View>
+    );
+  }
+
+  if (!topic) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.emptyText}>This topic could not be loaded.</Text>
+      </View>
+    );
+  }
+
+  const materialCount = (topic.resources?.length || 0) + (topic.practice_links?.length || 0);
+  const hasPreparedResources = materialCount > 0;
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <ChevronLeft color={theme.colors.primary.ink} size={28} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {goalTitle || 'Topic'}
+        </Text>
+        <View style={styles.headerSpacer} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.heroCard}>
+          <Text style={styles.phaseLabel}>{phaseTitle || 'Roadmap Topic'}</Text>
+          <Text style={styles.topicTitle}>{topic.title}</Text>
+
+          <View style={styles.metaRow}>
+            <View style={styles.metaChip}>
+              <Clock color={theme.colors.primary.inkMuted} size={14} />
+              <Text style={styles.metaText}>{topic.estimated_minutes} min</Text>
+            </View>
+            <View style={styles.metaChip}>
+              <Text style={styles.metaText}>Day {topic.day_index + 1}</Text>
+            </View>
+            <View
+              style={[
+                styles.statusChip,
+                topic.status === 'done' && styles.statusChipDone,
+                topic.status === 'in_progress' && styles.statusChipActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.statusText,
+                  topic.status === 'done' && styles.statusTextDone,
+                  topic.status === 'in_progress' && styles.statusTextActive,
+                ]}
+              >
+                {topic.status.replace('_', ' ').toUpperCase()}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {!!topic.ai_note && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Why This Topic Now</Text>
+            <Text style={styles.noteText}>{topic.ai_note}</Text>
+          </View>
+        )}
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Materials</Text>
+            {!hasPreparedResources && (
+              <TouchableOpacity
+                style={styles.prepareButton}
+                onPress={handlePrepareNow}
+                disabled={preparing}
+              >
+                <Sparkles color={theme.colors.neutral.white} size={14} />
+                <Text style={styles.prepareButtonText}>
+                  {preparing ? 'Preparing...' : 'Prepare Now'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {hasPreparedResources ? (
+            <>
+              {topic.resources?.map((resource) => (
+                <ResourceCard
+                  key={resource.resource_id || `${resource.url}-${resource.title}`}
+                  resource={resource}
+                />
+              ))}
+              {topic.practice_links?.map((resource) => (
+                <ResourceCard
+                  key={resource.resource_id || `${resource.url}-${resource.title}`}
+                  resource={resource}
+                />
+              ))}
+            </>
+          ) : (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>Links are not prepared yet</Text>
+              <Text style={styles.emptyBody}>
+                You can prepare resources now, or use the search prompts below while Stride catches up.
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {!!topic.resource_queries?.length && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Search Prompts</Text>
+            <View style={styles.queryList}>
+              {topic.resource_queries.map((query) => (
+                <TouchableOpacity
+                  key={query}
+                  style={styles.queryChip}
+                  onPress={() => openSearchQuery(query)}
+                >
+                  <Text style={styles.queryChipText}>{query}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.neutral.cream,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.neutral.cream,
+    padding: theme.spacing[24],
+  },
+  emptyText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.base,
+    color: theme.colors.primary.inkMuted,
+    textAlign: 'center',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing[16],
+    paddingTop: theme.spacing[64],
+    paddingBottom: theme.spacing[16],
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.neutral.border,
+  },
+  backButton: {
+    padding: theme.spacing[4],
+  },
+  headerTitle: {
+    flex: 1,
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.md,
+    fontWeight: theme.typography.fontWeights.semibold,
+    color: theme.colors.primary.ink,
+    marginHorizontal: theme.spacing[8],
+  },
+  headerSpacer: {
+    width: 28,
+  },
+  scrollContent: {
+    padding: theme.spacing[24],
+    paddingBottom: theme.spacing[64],
+  },
+  heroCard: {
+    backgroundColor: theme.colors.neutral.white,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing[20],
+    borderWidth: 1,
+    borderColor: theme.colors.neutral.border,
+    marginBottom: theme.spacing[20],
+  },
+  phaseLabel: {
+    fontFamily: theme.typography.fontMono,
+    fontSize: theme.typography.fontSizes.xs,
+    color: theme.colors.accent.coral,
+    marginBottom: theme.spacing[8],
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  topicTitle: {
+    fontFamily: theme.typography.fontDisplay,
+    fontSize: theme.typography.fontSizes.xxl,
+    color: theme.colors.primary.ink,
+    marginBottom: theme.spacing[16],
+  },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing[8],
+  },
+  metaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.neutral.cream,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: theme.spacing[12],
+    paddingVertical: theme.spacing[8],
+  },
+  metaText: {
+    fontFamily: theme.typography.fontMono,
+    fontSize: theme.typography.fontSizes.xs,
+    color: theme.colors.primary.inkMuted,
+    marginLeft: theme.spacing[6],
+  },
+  statusChip: {
+    backgroundColor: theme.colors.neutral.cream,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: theme.spacing[12],
+    paddingVertical: theme.spacing[8],
+  },
+  statusChipDone: {
+    backgroundColor: theme.colors.positive.sageLight,
+  },
+  statusChipActive: {
+    backgroundColor: theme.colors.accent.coralLight,
+  },
+  statusText: {
+    fontFamily: theme.typography.fontMono,
+    fontSize: theme.typography.fontSizes.xs,
+    color: theme.colors.primary.inkMuted,
+  },
+  statusTextDone: {
+    color: theme.colors.positive.sageDark,
+  },
+  statusTextActive: {
+    color: theme.colors.accent.coralDark,
+  },
+  section: {
+    marginBottom: theme.spacing[24],
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing[12],
+  },
+  sectionTitle: {
+    fontFamily: theme.typography.fontDisplay,
+    fontSize: theme.typography.fontSizes.lg,
+    color: theme.colors.primary.ink,
+    marginBottom: theme.spacing[12],
+  },
+  noteText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.base,
+    color: theme.colors.primary.inkMuted,
+    lineHeight: 24,
+  },
+  emptyCard: {
+    backgroundColor: theme.colors.neutral.white,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.neutral.border,
+    padding: theme.spacing[16],
+  },
+  emptyTitle: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.md,
+    color: theme.colors.primary.ink,
+    fontWeight: theme.typography.fontWeights.semibold,
+    marginBottom: theme.spacing[8],
+  },
+  emptyBody: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    color: theme.colors.primary.inkMuted,
+    lineHeight: 20,
+  },
+  prepareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.primary.ink,
+    paddingHorizontal: theme.spacing[12],
+    paddingVertical: theme.spacing[8],
+    borderRadius: theme.borderRadius.full,
+  },
+  prepareButtonText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    color: theme.colors.neutral.white,
+    marginLeft: theme.spacing[6],
+    fontWeight: theme.typography.fontWeights.semibold,
+  },
+  queryList: {
+    gap: theme.spacing[10],
+  },
+  queryChip: {
+    backgroundColor: theme.colors.neutral.white,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.neutral.border,
+    paddingHorizontal: theme.spacing[12],
+    paddingVertical: theme.spacing[12],
+  },
+  queryChipText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    color: theme.colors.primary.ink,
+  },
+});

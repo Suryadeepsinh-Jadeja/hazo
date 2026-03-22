@@ -109,7 +109,12 @@ export const RoadmapScreen = () => {
                                topic={topic} 
                                isToday={topic.day_index === roadmap.current_day_index}
                                isLocked={topic.status === 'locked'}
-                               onPress={() => {}} 
+                               onPress={() =>
+                                 navigation.navigate('TopicDetailScreen', {
+                                   goalId,
+                                   topicId: topic.topic_id,
+                                 })
+                               } 
                              />
                            </View>
                         ))}
