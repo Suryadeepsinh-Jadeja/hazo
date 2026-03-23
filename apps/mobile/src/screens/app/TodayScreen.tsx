@@ -1,15 +1,16 @@
 import React, { useCallback, useState, useEffect, memo, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal, Dimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useQuery, useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import LinearGradient from 'react-native-linear-gradient';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, withRepeat, withDelay, Easing } from 'react-native-reanimated';
-import { PlayCircle, Flame, Clock, BookOpen, CheckCircle2 } from 'lucide-react-native';
+import { Flame, CheckCircle2, Clock, BookOpen, Sparkles } from 'lucide-react-native';
 import { Linking } from 'react-native';
 
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
+import { getGoalVisualTheme } from '../../lib/goalVisuals';
 
 // --- Types ---
 interface Resource {
@@ -106,6 +107,8 @@ const formatTaskDueLabel = (dueDate?: string | null) => {
   return `Due ${due.toLocaleDateString()}`;
 };
 
+const GOAL_DECK_CARD_WIDTH = Dimensions.get('window').width - theme.spacing[48];
+
 // --- Animated Shimmer Skeleton ---
 const Skeleton = memo(({ width, height, style, borderRadius = theme.borderRadius.sm }: any) => {
   const opacity = useSharedValue(0.3);
@@ -157,6 +160,65 @@ const ConfettiParticle = memo(({ active, color, angle, distance, delay }: any) =
   );
 });
 
+const GoalPattern = memo(({ pattern, color }: { pattern: string; color: string }) => {
+  if (pattern === 'beam') {
+    return (
+      <>
+        <View style={[styles.patternBeam, { backgroundColor: color }]} />
+        <View style={[styles.patternBeamSmall, { backgroundColor: color }]} />
+      </>
+    );
+  }
+
+  if (pattern === 'rings') {
+    return (
+      <>
+        <View style={[styles.patternRingLarge, { borderColor: color }]} />
+        <View style={[styles.patternRingSmall, { borderColor: color }]} />
+      </>
+    );
+  }
+
+  if (pattern === 'grid') {
+    return null;
+  }
+
+  if (pattern === 'leaf') {
+    return (
+      <>
+        <View style={[styles.patternLeafLarge, { backgroundColor: color }]} />
+        <View style={[styles.patternLeafSmall, { backgroundColor: color }]} />
+      </>
+    );
+  }
+
+  if (pattern === 'arc') {
+    return (
+      <>
+        <View style={[styles.patternArcLarge, { borderColor: color }]} />
+        <View style={[styles.patternArcSmall, { borderColor: color }]} />
+      </>
+    );
+  }
+
+  if (pattern === 'spark') {
+    return (
+      <>
+        <View style={[styles.patternSparkVertical, { backgroundColor: color }]} />
+        <View style={[styles.patternSparkHorizontal, { backgroundColor: color }]} />
+        <View style={[styles.patternSparkDot, { backgroundColor: color }]} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <View style={[styles.patternOrbLarge, { backgroundColor: color }]} />
+      <View style={[styles.patternOrbSmall, { backgroundColor: color }]} />
+    </>
+  );
+});
+
 // --- Main Screen ---
 export const TodayScreen = () => {
   const navigation = useNavigation<any>();
@@ -167,6 +229,7 @@ export const TodayScreen = () => {
   const [toastVisible, setToastVisible] = useState(false);
   const [simplifyTarget, setSimplifyTarget] = useState<{ goalId: string; topicId: string } | null>(null);
   const [completingGoalId, setCompletingGoalId] = useState<string | null>(null);
+  const [activeDeckIndex, setActiveDeckIndex] = useState(0);
 
   // Time-based Greeting
   const greeting = useMemo(() => {
@@ -362,145 +425,225 @@ export const TodayScreen = () => {
         {goalCards.length > 0 && (
           <View style={styles.tasksSection}>
             <Text style={styles.sectionHeader}>Today Across Your Goals</Text>
-            <Text style={styles.sectionSubheader}>Each active goal gets its own daily task card here.</Text>
+            <Text style={styles.sectionSubheader}>Swipe sideways through your goals like a deck.</Text>
           </View>
         )}
 
-        {goalCards.map(({ goal, query, taskCard, primaryTopic }, goalIndex) => (
-          <View key={goal._id} style={styles.goalSection}>
-            {query?.isError ? (
-              <View style={styles.infoCard}>
-                <Text style={styles.infoCardTitle}>Couldn&apos;t load {goal.title}</Text>
-                <Text style={styles.infoCardBody}>
-                  Pull to refresh or open the goal directly from the Goals tab.
-                </Text>
-                <TouchableOpacity style={styles.secondaryButton} onPress={() => query.refetch()}>
-                  <Text style={styles.secondaryButtonText}>Retry Goal</Text>
-                </TouchableOpacity>
+        {goalCards.length > 0 && (
+          <View style={styles.goalDeckSection}>
+            {confettiActive && (
+              <View style={styles.confettiContainer} pointerEvents="none">
+                {Array.from({ length: 20 }).map((_, i) => (
+                  <ConfettiParticle
+                    key={i}
+                    active={confettiActive}
+                    color={confettiColors[i % confettiColors.length]}
+                    angle={(Math.PI * 2 * i) / 20}
+                    distance={70 + Math.random() * 50}
+                    delay={Math.random() * 100}
+                  />
+                ))}
               </View>
-            ) : null}
+            )}
 
-            {taskCard ? (
-              <>
-                {(() => {
-                  const displayMaterials = getTodayDisplayMaterials(primaryTopic);
-                  const isCompletingThisGoal = completeMutation.isPending && completingGoalId === goal._id;
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              pagingEnabled={false}
+              decelerationRate="fast"
+              disableIntervalMomentum
+              snapToInterval={GOAL_DECK_CARD_WIDTH + theme.spacing[16]}
+              snapToOffsets={goalCards.map((_, index) => index * (GOAL_DECK_CARD_WIDTH + theme.spacing[16]))}
+              snapToAlignment="start"
+              contentContainerStyle={styles.goalDeckContent}
+              overScrollMode="never"
+              onMomentumScrollEnd={(event) => {
+                const nextIndex = Math.round(
+                  event.nativeEvent.contentOffset.x / (GOAL_DECK_CARD_WIDTH + theme.spacing[16])
+                );
+                setActiveDeckIndex(nextIndex);
+              }}
+            >
+              {goalCards.map(({ goal, query, taskCard, primaryTopic }, index) => {
+                const isCompletingThisGoal = completeMutation.isPending && completingGoalId === goal._id;
+                const displayMaterials = getTodayDisplayMaterials(primaryTopic);
+                const primaryMaterial = displayMaterials[0];
+                const visualTheme = getGoalVisualTheme(goal._id || goal.title);
 
+                if (query?.isError) {
                   return (
-                    <>
-                <View style={styles.progressContainer}>
-                  <View style={styles.progressTextRow}>
-                    <Text style={styles.phaseTitleText}>{taskCard.goal_title || goal.title}</Text>
-                    <Text style={styles.dayIndexText}>Day {(taskCard.day_index || 0) + 1} of {taskCard.total_days || '—'}</Text>
-                  </View>
-                  <View style={styles.progressBarBg}>
                     <View
+                      key={goal._id}
                       style={[
-                        styles.progressBarFill,
+                        styles.deckCard,
+                        styles.deckCardFallback,
                         {
-                          width: `${Math.min(
-                            100,
-                            (((taskCard.day_index || 0) + 1) / Math.max(taskCard.total_days || 1, 1)) * 100
-                          )}%`,
+                          width: GOAL_DECK_CARD_WIDTH,
+                          marginRight: index === goalCards.length - 1 ? 0 : theme.spacing[16],
+                          backgroundColor: visualTheme.surface,
+                          borderColor: visualTheme.border,
                         },
                       ]}
-                    />
-                  </View>
-                </View>
-
-                <View style={styles.heroCard}>
-                  {goalIndex === 0 && confettiActive && (
-                    <View style={{ position: 'absolute', top: '50%', left: '50%', zIndex: 100 }} pointerEvents="none">
-                      {Array.from({ length: 20 }).map((_, i) => (
-                        <ConfettiParticle
-                          key={i}
-                          active={confettiActive}
-                          color={confettiColors[i % confettiColors.length]}
-                          angle={(Math.PI * 2 * i) / 20}
-                          distance={80 + Math.random() * 60}
-                          delay={Math.random() * 100}
-                        />
-                      ))}
-                    </View>
-                  )}
-
-                  <LinearGradient
-                    colors={[theme.colors.accent.coral, theme.colors.primary.ink]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.heroGradientHeader}
-                  >
-                    <Text style={styles.phaseLabel}>TODAY&apos;S TASK • DAY {(taskCard.day_index || 0) + 1}</Text>
-                    <Text style={styles.goalLabel}>{taskCard.goal_title || goal.title}</Text>
-                    <Text style={styles.topicTitle}>{primaryTopic?.title || 'No Tasks Today'}</Text>
-
-                    <View style={styles.timeChip}>
-                      <Clock color={theme.colors.primary.ink} size={12} />
-                      <Text style={styles.timeChipText}>~{primaryTopic?.estimated_minutes || 0} min</Text>
-                    </View>
-                  </LinearGradient>
-
-                  <View style={styles.heroBody}>
-                    {primaryTopic?.ai_note && (
-                      <Text style={styles.aiNote}>"{primaryTopic.ai_note}"</Text>
-                    )}
-
-                    {displayMaterials.map((res, i) => (
-                      <TouchableOpacity key={i} style={styles.resourceRow} onPress={() => handleOpenLink(res.url)}>
-                        {res.type === 'video' ? <PlayCircle color={theme.colors.primary.inkMuted} size={18} /> : <BookOpen color={theme.colors.primary.inkMuted} size={18} />}
-                        <Text style={styles.resourceText} numberOfLines={1}>{res.title}</Text>
+                    >
+                      <Text style={styles.deckEyebrow}>Today&apos;s Goal</Text>
+                      <Text style={styles.deckGoalTitle}>{goal.title}</Text>
+                      <Text style={styles.deckTaskTitle}>Couldn&apos;t load this card yet</Text>
+                      <TouchableOpacity style={styles.deckLightButton} onPress={() => query.refetch()}>
+                        <Text style={styles.deckLightButtonText}>Retry</Text>
                       </TouchableOpacity>
-                    ))}
-
-                    <TouchableOpacity
-                      style={[styles.doneButton, isCompletingThisGoal && { opacity: 0.7 }]}
-                      onPress={() => handleMarkDone(goal._id, primaryTopic?.topic_id)}
-                      disabled={isCompletingThisGoal || !primaryTopic?.topic_id}
-                    >
-                      <Text style={styles.doneButtonText}>{isCompletingThisGoal ? 'Completing...' : 'Mark as Done ✓'}</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.ghostButton}
-                      onPress={() => handleAskMentor(goal._id, primaryTopic?.title || taskCard.goal_title || goal.title)}
-                    >
-                      <Text style={styles.ghostButtonText}>Ask AI Mentor</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.tooMuchLink}
-                  onPress={() => primaryTopic?.topic_id && setSimplifyTarget({ goalId: goal._id, topicId: primaryTopic.topic_id })}
-                >
-                  <Text style={styles.tooMuchText}>Too much today?</Text>
-                </TouchableOpacity>
-
-                {taskCard.topics?.length > 1 && (
-                  <View style={styles.tasksSection}>
-                    <Text style={styles.sectionHeader}>Coming Up In {taskCard.goal_title || goal.title}</Text>
-                    {taskCard.topics.slice(1).map((topic, i) => (
-                      <View key={topic.topic_id || i} style={styles.secondaryTopicCard}>
-                         <Text style={styles.secondaryTopicTitle}>{topic.title}</Text>
-                         <Text style={styles.secondaryTopicMins}>{topic.estimated_minutes} min</Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-                    </>
+                    </View>
                   );
-                })()}
-              </>
-            ) : !query?.isLoading ? (
-              <View style={styles.infoCard}>
-                <Text style={styles.infoCardTitle}>No goal task ready for {goal.title}</Text>
-                <Text style={styles.infoCardBody}>
-                  The roadmap still exists, but this goal does not have a daily card ready right now.
-                </Text>
-              </View>
-            ) : null}
+                }
+
+                if (!taskCard || !primaryTopic) {
+                  return (
+                    <View
+                      key={goal._id}
+                      style={[
+                        styles.deckCard,
+                        styles.deckCardFallback,
+                        {
+                          width: GOAL_DECK_CARD_WIDTH,
+                          marginRight: index === goalCards.length - 1 ? 0 : theme.spacing[16],
+                          backgroundColor: visualTheme.surface,
+                          borderColor: visualTheme.border,
+                        },
+                      ]}
+                    >
+                      <Text style={styles.deckEyebrow}>Today&apos;s Goal</Text>
+                      <Text style={styles.deckGoalTitle}>{goal.title}</Text>
+                      <Text style={styles.deckTaskTitle}>No daily task ready right now</Text>
+                    </View>
+                  );
+                }
+
+                return (
+                  <TouchableOpacity
+                    key={goal._id}
+                    activeOpacity={0.92}
+                    style={[
+                      styles.deckCard,
+                      {
+                        width: GOAL_DECK_CARD_WIDTH,
+                        marginRight: index === goalCards.length - 1 ? 0 : theme.spacing[16],
+                      },
+                    ]}
+                    onPress={() =>
+                      navigation.navigate('TopicDetailScreen', {
+                        goalId: goal._id,
+                        topicId: primaryTopic.topic_id,
+                      })
+                    }
+                  >
+                    <LinearGradient
+                      colors={visualTheme.gradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.deckGradient}
+                    >
+                      <GoalPattern pattern={visualTheme.pattern} color={`${visualTheme.accentSoft}55`} />
+
+                      <View style={styles.deckTopRow}>
+                        <View style={[styles.deckPill, { backgroundColor: `${visualTheme.onAccent}22`, borderColor: `${visualTheme.onAccent}2E` }]}>
+                          <Text style={[styles.deckPillText, { color: visualTheme.onAccent }]}>
+                            DAY {(taskCard.day_index || 0) + 1} / {taskCard.total_days || '—'}
+                          </Text>
+                        </View>
+                        <View style={[styles.deckPill, { backgroundColor: `${visualTheme.onAccent}18`, borderColor: `${visualTheme.onAccent}2B` }]}>
+                          <Clock color={visualTheme.onAccent} size={12} />
+                          <Text style={[styles.deckPillText, { color: visualTheme.onAccent }]}>~{primaryTopic.estimated_minutes || 0} min</Text>
+                        </View>
+                      </View>
+
+                      <Text style={[styles.deckEyebrow, { color: `${visualTheme.onAccent}CC` }]}>Today&apos;s Goal</Text>
+                      <Text style={[styles.deckGoalTitle, { color: visualTheme.onAccent }]} numberOfLines={2}>
+                        {taskCard.goal_title || goal.title}
+                      </Text>
+                      <Text style={[styles.deckTaskTitle, { color: visualTheme.onAccent }]} numberOfLines={3}>
+                        {primaryTopic.title}
+                      </Text>
+
+                      {primaryTopic.ai_note ? (
+                        <Text style={[styles.deckNote, { color: `${visualTheme.onAccent}D9` }]} numberOfLines={3}>
+                          {primaryTopic.ai_note}
+                        </Text>
+                      ) : null}
+
+                      <View style={styles.deckActionRow}>
+                        <TouchableOpacity
+                          style={[
+                            styles.deckCompleteButton,
+                            { backgroundColor: visualTheme.onAccent },
+                            isCompletingThisGoal && styles.deckCompleteButtonPending,
+                          ]}
+                          onPress={() => handleMarkDone(goal._id, primaryTopic.topic_id)}
+                          disabled={isCompletingThisGoal}
+                        >
+                          <CheckCircle2 color={visualTheme.accent} size={18} />
+                          <Text style={[styles.deckCompleteButtonText, { color: visualTheme.accent }]}>
+                            {isCompletingThisGoal ? 'Completing...' : 'Done'}
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.deckSecondaryButton, { borderColor: `${visualTheme.onAccent}55` }]}
+                          onPress={() => handleAskMentor(goal._id, primaryTopic.title || taskCard.goal_title || goal.title)}
+                        >
+                          <Sparkles color={visualTheme.onAccent} size={14} />
+                          <Text style={[styles.deckSecondaryButtonText, { color: visualTheme.onAccent }]}>Mentor</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.deckFooterRow}>
+                        {primaryMaterial ? (
+                          <TouchableOpacity
+                            style={[styles.deckMiniLink, { backgroundColor: `${visualTheme.onAccent}18` }]}
+                            onPress={() => handleOpenLink(primaryMaterial.url)}
+                          >
+                            <BookOpen color={visualTheme.onAccent} size={13} />
+                            <Text style={[styles.deckMiniLinkText, { color: visualTheme.onAccent }]} numberOfLines={1}>
+                              {primaryMaterial.title}
+                            </Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity
+                            style={[styles.deckMiniLink, { backgroundColor: `${visualTheme.onAccent}14` }]}
+                            onPress={() => setSimplifyTarget({ goalId: goal._id, topicId: primaryTopic.topic_id })}
+                          >
+                            <Text style={[styles.deckMiniLinkText, { color: visualTheme.onAccent }]} numberOfLines={1}>
+                              Too much today?
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.deckDotsRow}>
+              {goalCards.map(({ goal }) => {
+                const dotTheme = getGoalVisualTheme(goal._id || goal.title);
+                const dotIndex = goalCards.findIndex((item) => item.goal._id === goal._id);
+                const isActive = dotIndex === activeDeckIndex;
+
+                return (
+                  <View
+                    key={goal._id}
+                    style={[
+                      styles.deckDot,
+                      {
+                        backgroundColor: isActive ? dotTheme.accent : dotTheme.accentSoft,
+                        width: isActive ? 22 : 8,
+                      },
+                    ]}
+                  />
+                );
+              })}
+            </View>
           </View>
-        ))}
+        )}
 
         {activeGoals.length === 0 && (
           <View style={styles.infoCard}>
@@ -654,6 +797,415 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#4F46E5', // "indigo" as requested in prompt
     borderRadius: 2,
+  },
+  goalDeckSection: {
+    position: 'relative',
+    marginBottom: theme.spacing[24],
+  },
+  goalDeckContent: {
+    paddingRight: 0,
+  },
+  deckCard: {
+    borderRadius: 30,
+    overflow: 'hidden',
+    shadowColor: theme.colors.primary.ink,
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+  },
+  deckGradient: {
+    minHeight: 420,
+    padding: theme.spacing[24],
+    justifyContent: 'space-between',
+  },
+  deckCardFallback: {
+    minHeight: 260,
+    padding: theme.spacing[24],
+    borderWidth: 1,
+    justifyContent: 'space-between',
+  },
+  deckLightButton: {
+    alignSelf: 'flex-start',
+    marginTop: theme.spacing[16],
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.primary.ink,
+  },
+  deckLightButtonText: {
+    fontFamily: theme.typography.fontMono,
+    fontSize: theme.typography.fontSizes.xs,
+    color: theme.colors.neutral.white,
+    fontWeight: theme.typography.fontWeights.bold,
+  },
+  deckTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing[20],
+  },
+  deckPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: theme.borderRadius.full,
+  },
+  deckPillText: {
+    fontFamily: theme.typography.fontMono,
+    fontSize: 10,
+    fontWeight: theme.typography.fontWeights.bold,
+    letterSpacing: 0.6,
+  },
+  deckEyebrow: {
+    fontFamily: theme.typography.fontMono,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    marginBottom: theme.spacing[10],
+  },
+  deckGoalTitle: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    fontWeight: theme.typography.fontWeights.semibold,
+    marginBottom: theme.spacing[12],
+  },
+  deckTaskTitle: {
+    fontFamily: theme.typography.fontDisplay,
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: theme.typography.fontWeights.bold,
+    marginBottom: theme.spacing[16],
+  },
+  deckNote: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.base,
+    lineHeight: 24,
+    fontStyle: 'italic',
+    marginBottom: theme.spacing[20],
+  },
+  deckActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing[12],
+    marginTop: 'auto',
+  },
+  deckCompleteButton: {
+    flex: 1,
+    minHeight: 54,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  deckCompleteButtonPending: {
+    opacity: 0.75,
+  },
+  deckCompleteButtonText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.md,
+    fontWeight: theme.typography.fontWeights.bold,
+  },
+  deckSecondaryButton: {
+    minHeight: 54,
+    minWidth: 108,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  deckSecondaryButtonText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    fontWeight: theme.typography.fontWeights.semibold,
+  },
+  deckFooterRow: {
+    marginTop: 14,
+  },
+  deckMiniLink: {
+    minHeight: 44,
+    borderRadius: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+  },
+  deckMiniLinkText: {
+    flex: 1,
+    marginLeft: 8,
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    fontWeight: theme.typography.fontWeights.medium,
+  },
+  deckDotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: theme.spacing[16],
+    gap: theme.spacing[8],
+  },
+  deckDot: {
+    height: 8,
+    borderRadius: 999,
+  },
+  patternOrbLarge: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    top: -26,
+    right: -32,
+  },
+  patternOrbSmall: {
+    position: 'absolute',
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    bottom: 74,
+    right: 28,
+  },
+  patternBeam: {
+    position: 'absolute',
+    width: 220,
+    height: 28,
+    transform: [{ rotate: '-24deg' }],
+    top: 54,
+    right: -42,
+    borderRadius: 20,
+  },
+  patternBeamSmall: {
+    position: 'absolute',
+    width: 140,
+    height: 16,
+    transform: [{ rotate: '-24deg' }],
+    top: 100,
+    right: -18,
+    borderRadius: 20,
+  },
+  patternRingLarge: {
+    position: 'absolute',
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    borderWidth: 18,
+    top: -24,
+    right: -48,
+  },
+  patternRingSmall: {
+    position: 'absolute',
+    width: 94,
+    height: 94,
+    borderRadius: 47,
+    borderWidth: 10,
+    bottom: 86,
+    right: 20,
+  },
+  patternGridBlock: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    top: 26,
+    right: -18,
+    borderRadius: 24,
+  },
+  patternGridDots: {
+    position: 'absolute',
+    width: 108,
+    height: 108,
+    bottom: 76,
+    right: 14,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+  },
+  patternLeafLarge: {
+    position: 'absolute',
+    width: 164,
+    height: 240,
+    borderTopLeftRadius: 120,
+    borderTopRightRadius: 120,
+    borderBottomLeftRadius: 120,
+    borderBottomRightRadius: 30,
+    top: -36,
+    right: -28,
+    transform: [{ rotate: '14deg' }],
+  },
+  patternLeafSmall: {
+    position: 'absolute',
+    width: 92,
+    height: 156,
+    borderTopLeftRadius: 80,
+    borderTopRightRadius: 80,
+    borderBottomLeftRadius: 80,
+    borderBottomRightRadius: 24,
+    bottom: 104,
+    right: 30,
+    transform: [{ rotate: '-18deg' }],
+  },
+  patternArcLarge: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    borderWidth: 24,
+    top: -40,
+    right: -78,
+  },
+  patternArcSmall: {
+    position: 'absolute',
+    width: 124,
+    height: 124,
+    borderRadius: 62,
+    borderWidth: 12,
+    bottom: 76,
+    right: 10,
+  },
+  patternSparkVertical: {
+    position: 'absolute',
+    width: 18,
+    height: 140,
+    top: 24,
+    right: 42,
+    borderRadius: 10,
+  },
+  patternSparkHorizontal: {
+    position: 'absolute',
+    width: 140,
+    height: 18,
+    top: 86,
+    right: -12,
+    borderRadius: 10,
+  },
+  patternSparkDot: {
+    position: 'absolute',
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    bottom: 80,
+    right: 16,
+  },
+  compactChecklistCard: {
+    position: 'relative',
+    backgroundColor: theme.colors.neutral.white,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.neutral.border,
+    overflow: 'hidden',
+    marginBottom: theme.spacing[24],
+  },
+  confettiContainer: {
+    position: 'absolute',
+    top: '35%',
+    left: '50%',
+    zIndex: 5,
+  },
+  compactTaskRowWrap: {
+    padding: theme.spacing[16],
+  },
+  compactTaskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  compactTaskBody: {
+    flex: 1,
+    marginRight: theme.spacing[12],
+  },
+  compactTaskTitle: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.base,
+    color: theme.colors.primary.ink,
+    fontWeight: theme.typography.fontWeights.semibold,
+    lineHeight: 24,
+  },
+  compactTaskMeta: {
+    marginTop: theme.spacing[6],
+    fontFamily: theme.typography.fontMono,
+    fontSize: theme.typography.fontSizes.xs,
+    color: theme.colors.primary.inkMuted,
+  },
+  compactTaskHint: {
+    marginTop: theme.spacing[6],
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.xs,
+    color: theme.colors.primary.inkMuted,
+  },
+  checkboxButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: theme.colors.active?.indigo || '#4F46E5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.neutral.white,
+  },
+  checkboxButtonPending: {
+    backgroundColor: theme.colors.active?.indigo || '#4F46E5',
+    opacity: 0.8,
+  },
+  compactRowFooter: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    marginTop: theme.spacing[12],
+    gap: theme.spacing[12],
+  },
+  compactFooterAction: {
+    paddingVertical: 2,
+  },
+  compactFooterActionText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    color: theme.colors.primary.inkMuted,
+    textDecorationLine: 'underline',
+  },
+  compactPendingText: {
+    marginLeft: 'auto',
+    fontFamily: theme.typography.fontMono,
+    fontSize: theme.typography.fontSizes.xs,
+    color: theme.colors.active?.indigo || '#4F46E5',
+    fontWeight: theme.typography.fontWeights.bold,
+  },
+  compactDivider: {
+    height: 1,
+    backgroundColor: theme.colors.neutral.border,
+    marginHorizontal: theme.spacing[16],
+  },
+  compactLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: theme.spacing[16],
+  },
+  compactLoadingText: {
+    flex: 1,
+    marginLeft: theme.spacing[12],
+  },
+  compactErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: theme.spacing[16],
+  },
+  compactEmptyRow: {
+    padding: theme.spacing[16],
+  },
+  retryPillButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.neutral.cream,
+    borderWidth: 1,
+    borderColor: theme.colors.neutral.border,
+  },
+  retryPillButtonText: {
+    fontFamily: theme.typography.fontMono,
+    fontSize: theme.typography.fontSizes.xs,
+    color: theme.colors.primary.ink,
+    fontWeight: theme.typography.fontWeights.bold,
   },
   heroSkeleton: {
     backgroundColor: theme.colors.neutral.white,

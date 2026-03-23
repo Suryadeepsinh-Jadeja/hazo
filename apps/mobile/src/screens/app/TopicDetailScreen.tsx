@@ -14,6 +14,7 @@ import { ChevronLeft, Clock, Sparkles } from 'lucide-react-native';
 import api from '../../lib/api';
 import { ResourceCard } from '../../components/ResourceCard';
 import { theme } from '../../constants/theme';
+import { getGoalVisualTheme } from '../../lib/goalVisuals';
 
 interface TopicResource {
   resource_id?: string;
@@ -47,6 +48,7 @@ export const TopicDetailScreen = () => {
   const [topic, setTopic] = useState<TopicDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [preparing, setPreparing] = useState(false);
+  const visualTheme = getGoalVisualTheme(goalId || goalTitle);
 
   const loadTopic = async () => {
     if (!goalId || !topicId) {
@@ -150,21 +152,22 @@ export const TopicDetailScreen = () => {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.heroCard}>
-          <Text style={styles.phaseLabel}>{phaseTitle || 'Roadmap Topic'}</Text>
+        <View style={[styles.heroCard, { backgroundColor: visualTheme.surface, borderColor: visualTheme.border }]}>
+          <Text style={[styles.phaseLabel, { color: visualTheme.accent }]}>{phaseTitle || 'Roadmap Topic'}</Text>
           <Text style={styles.topicTitle}>{topic.title}</Text>
 
           <View style={styles.metaRow}>
-            <View style={styles.metaChip}>
+            <View style={[styles.metaChip, { backgroundColor: visualTheme.surfaceAlt }]}>
               <Clock color={theme.colors.primary.inkMuted} size={14} />
               <Text style={styles.metaText}>{topic.estimated_minutes} min</Text>
             </View>
-            <View style={styles.metaChip}>
+            <View style={[styles.metaChip, { backgroundColor: visualTheme.surfaceAlt }]}>
               <Text style={styles.metaText}>Day {topic.day_index + 1}</Text>
             </View>
             <View
               style={[
                 styles.statusChip,
+                { backgroundColor: visualTheme.pillBg },
                 topic.status === 'done' && styles.statusChipDone,
                 topic.status === 'in_progress' && styles.statusChipActive,
               ]}
@@ -193,7 +196,7 @@ export const TopicDetailScreen = () => {
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Materials</Text>
             <TouchableOpacity
-              style={styles.prepareButton}
+              style={[styles.prepareButton, { backgroundColor: visualTheme.accent }]}
               onPress={handlePrepareNow}
               disabled={preparing}
             >

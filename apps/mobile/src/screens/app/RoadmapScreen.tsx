@@ -7,6 +7,7 @@ import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 import { TopicRow } from '../../components/TopicRow';
 import { useGoalStore } from '../../store/goalStore';
+import { getGoalVisualTheme } from '../../lib/goalVisuals';
 
 export const RoadmapScreen = () => {
   const route = useRoute<any>();
@@ -54,6 +55,7 @@ export const RoadmapScreen = () => {
 
   const onPressInFab = () => { fabScale.value = withTiming(0.95, { duration: 100 }); };
   const onPressOutFab = () => { fabScale.value = withTiming(1, { duration: 100 }); };
+  const visualTheme = getGoalVisualTheme(goalId || roadmap?.title);
   const currentTopicTitle =
     roadmap?.phases
       ?.flatMap((phase: any) => phase.topics || [])
@@ -82,7 +84,7 @@ export const RoadmapScreen = () => {
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{roadmap.title}</Text>
         <TouchableOpacity style={styles.headerActionButton} onPress={() => navigation.navigate('SkillsScreen', { goalId })}>
-          <Text style={styles.headerAction}>Skills Graph</Text>
+          <Text style={[styles.headerAction, { color: visualTheme.accent }]}>Skills Graph</Text>
         </TouchableOpacity>
       </View>
 
@@ -97,17 +99,27 @@ export const RoadmapScreen = () => {
 
                return (
                  <View key={phaseKey} style={styles.phaseBlock}>
-                   <TouchableOpacity style={styles.phaseHeader} onPress={() => togglePhase(phaseKey)} activeOpacity={0.7}>
+                   <TouchableOpacity
+                     style={[
+                       styles.phaseHeader,
+                       {
+                         backgroundColor: visualTheme.surface,
+                         borderColor: visualTheme.border,
+                       },
+                     ]}
+                     onPress={() => togglePhase(phaseKey)}
+                     activeOpacity={0.7}
+                   >
                       <View style={styles.phaseHeaderLeft}>
                         {isCollapsed ? <ChevronDown color={theme.colors.primary.ink} size={20} /> : <ChevronUp color={theme.colors.primary.ink} size={20} />}
                         <Text style={styles.phaseTitle}>Phase {index + 1}: {phase.title}</Text>
                       </View>
-                      <Text style={styles.phaseProgress}>{done}/{total}</Text>
+                      <Text style={[styles.phaseProgress, { color: visualTheme.accent }]}>{done}/{total}</Text>
                    </TouchableOpacity>
 
                    {!isCollapsed && (
                      <View style={styles.topicsList}>
-                        <View style={styles.verticalTimelineStem} />
+                        <View style={[styles.verticalTimelineStem, { backgroundColor: visualTheme.border }]} />
                         {phase.topics.map((topic: any) => (
                            <View key={topic.topic_id} style={styles.topicRowWrapper}>
                              <TopicRow 
@@ -133,9 +145,9 @@ export const RoadmapScreen = () => {
 
       {/* FAB Mentor Button */}
       <TouchableWithoutFeedback onPressIn={onPressInFab} onPressOut={onPressOutFab} onPress={handleFabPress}>
-        <Animated.View style={[styles.fab, fabAnimatedStyle]}>
+        <Animated.View style={[styles.fab, fabAnimatedStyle, { backgroundColor: visualTheme.accent }]}>
            <BotMessageSquare color={theme.colors.neutral.white} size={24} />
-           {!roadmap.mentor_visited_today && <View style={styles.fabBadge} />}
+           {!roadmap.mentor_visited_today && <View style={[styles.fabBadge, { backgroundColor: visualTheme.accentSoft, borderColor: visualTheme.accent }]} />}
         </Animated.View>
       </TouchableWithoutFeedback>
     </View>

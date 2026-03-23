@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Flame, Trash2 } from 'lucide-react-native';
 import { theme } from '../constants/theme';
+import { getGoalVisualTheme } from '../lib/goalVisuals';
 
 export interface GoalCardProps {
   goal: {
@@ -22,9 +23,20 @@ export const GoalCard = ({ goal, onPress, onDelete, deleting = false }: GoalCard
   const targetDate = goal.timeline_target
     ? new Date(goal.timeline_target).toLocaleDateString()
     : null;
+  const visualTheme = getGoalVisualTheme(goal._id || goal.title);
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
+    <TouchableOpacity
+      style={[
+        styles.card,
+        {
+          backgroundColor: visualTheme.surface,
+          borderColor: visualTheme.border,
+        },
+      ]}
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
       <View style={styles.header}>
         <Text style={styles.title} numberOfLines={2}>{goal.title}</Text>
         <View style={[
@@ -55,25 +67,35 @@ export const GoalCard = ({ goal, onPress, onDelete, deleting = false }: GoalCard
         <View
           style={[
             styles.progressBarFill,
+            { backgroundColor: visualTheme.accent },
             { width: `${Math.min(100, (currentDay / (goal.total_days || 1)) * 100)}%` },
           ]}
         />
       </View>
 
-      <View style={styles.streakRow}>
-        <Flame color={theme.colors.accent.coralDark} size={16} strokeWidth={2.5} />
-        <Text style={styles.streakText}>{currentDay}/{goal.total_days} complete</Text>
+      <View style={[styles.streakRow, { backgroundColor: visualTheme.pillBg }]}>
+        <Flame color={visualTheme.pillText} size={16} strokeWidth={2.5} />
+        <Text style={[styles.streakText, { color: visualTheme.pillText }]}>{currentDay}/{goal.total_days} complete</Text>
       </View>
 
       {onDelete ? (
         <TouchableOpacity
-          style={[styles.deleteButton, deleting && styles.deleteButtonDisabled]}
+          style={[
+            styles.deleteButton,
+            {
+              borderColor: visualTheme.accent,
+              backgroundColor: visualTheme.surfaceAlt,
+            },
+            deleting && styles.deleteButtonDisabled,
+          ]}
           onPress={onDelete}
           disabled={deleting}
           activeOpacity={0.85}
         >
-          <Trash2 color={theme.colors.danger.rose} size={16} />
-          <Text style={styles.deleteButtonText}>{deleting ? 'Deleting...' : 'Delete Goal'}</Text>
+          <Trash2 color={visualTheme.accent} size={16} />
+          <Text style={[styles.deleteButtonText, { color: visualTheme.accent }]}>
+            {deleting ? 'Deleting...' : 'Delete Goal'}
+          </Text>
         </TouchableOpacity>
       ) : null}
     </TouchableOpacity>
