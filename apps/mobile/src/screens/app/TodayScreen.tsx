@@ -45,6 +45,7 @@ interface GoalSummary {
   _id: string;
   title: string;
   status: string;
+  total_days?: number;
 }
 
 interface PersonalTask {
@@ -469,6 +470,7 @@ export const TodayScreen = () => {
                 const displayMaterials = getTodayDisplayMaterials(primaryTopic);
                 const primaryMaterial = displayMaterials[0];
                 const visualTheme = getGoalVisualTheme(goal._id || goal.title);
+                const displayTotalDays = taskCard?.total_days || goal.total_days || '—';
 
                 if (query?.isError) {
                   return (
@@ -546,7 +548,7 @@ export const TodayScreen = () => {
                       <View style={styles.deckTopRow}>
                         <View style={[styles.deckPill, { backgroundColor: `${visualTheme.onAccent}22`, borderColor: `${visualTheme.onAccent}2E` }]}>
                           <Text style={[styles.deckPillText, { color: visualTheme.onAccent }]}>
-                            DAY {(taskCard.day_index || 0) + 1} / {taskCard.total_days || '—'}
+                            DAY {(taskCard.day_index || 0) + 1} / {displayTotalDays}
                           </Text>
                         </View>
                         <View style={[styles.deckPill, { backgroundColor: `${visualTheme.onAccent}18`, borderColor: `${visualTheme.onAccent}2B` }]}>
