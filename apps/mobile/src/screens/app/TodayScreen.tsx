@@ -166,6 +166,7 @@ export const TodayScreen = () => {
   const [confettiActive, setConfettiActive] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
   const [simplifyTarget, setSimplifyTarget] = useState<{ goalId: string; topicId: string } | null>(null);
+  const [completingGoalId, setCompletingGoalId] = useState<string | null>(null);
 
   // Time-based Greeting
   const greeting = useMemo(() => {
@@ -266,6 +267,9 @@ export const TodayScreen = () => {
     mutationFn: async ({ goalId, topicId }: { goalId: string; topicId: string }) => {
       await api.post(`/api/v1/goals/${goalId}/topics/${topicId}/complete`);
     },
+    onMutate: ({ goalId }) => {
+      setCompletingGoalId(goalId);
+    },
     onSuccess: () => {
       setConfettiActive(true);
       setToastVisible(true);
@@ -276,7 +280,10 @@ export const TodayScreen = () => {
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
       queryClient.invalidateQueries({ queryKey: ['userStats'] });
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
-    }
+    },
+    onSettled: () => {
+      setCompletingGoalId(null);
+    },
   });
 
   const simplifyMutation = useMutation({
@@ -377,6 +384,7 @@ export const TodayScreen = () => {
               <>
                 {(() => {
                   const displayMaterials = getTodayDisplayMaterials(primaryTopic);
+                  const isCompletingThisGoal = completeMutation.isPending && completingGoalId === goal._id;
 
                   return (
                     <>
@@ -445,11 +453,11 @@ export const TodayScreen = () => {
                     ))}
 
                     <TouchableOpacity
-                      style={[styles.doneButton, completeMutation.isPending && { opacity: 0.7 }]}
+                      style={[styles.doneButton, isCompletingThisGoal && { opacity: 0.7 }]}
                       onPress={() => handleMarkDone(goal._id, primaryTopic?.topic_id)}
-                      disabled={completeMutation.isPending || !primaryTopic?.topic_id}
+                      disabled={isCompletingThisGoal || !primaryTopic?.topic_id}
                     >
-                      <Text style={styles.doneButtonText}>{completeMutation.isPending ? 'Completing...' : 'Mark as Done ✓'}</Text>
+                      <Text style={styles.doneButtonText}>{isCompletingThisGoal ? 'Completing...' : 'Mark as Done ✓'}</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity

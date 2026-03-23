@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
@@ -10,7 +10,8 @@ import { useGoalStore } from '../../store/goalStore';
 
 export const GoalsScreen = () => {
   const navigation = useNavigation<any>();
-  const { activeGoalId, setActiveGoalId } = useGoalStore();
+  const queryClient = useQueryClient();
+  const { activeGoalId, setActiveGoalId, setGoals } = useGoalStore();
 
   const { data: goals, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['goals'],
@@ -21,6 +22,24 @@ export const GoalsScreen = () => {
     }
   });
 
+  const deleteGoalMutation = useMutation({
+    mutationFn: async (goalId: string) => {
+      await api.delete(`/api/v1/goals/${goalId}`);
+    },
+    onSuccess: (_, deletedGoalId) => {
+      const remainingGoals = (goals || []).filter((goal: any) => goal._id !== deletedGoalId);
+      setGoals(remainingGoals);
+
+      if (activeGoalId === deletedGoalId) {
+        setActiveGoalId(remainingGoals[0]?._id || null);
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['goals'] });
+      queryClient.invalidateQueries({ queryKey: ['todayTask'] });
+      queryClient.invalidateQueries({ queryKey: ['mentorHistory'] });
+    },
+  });
+
   useEffect(() => {
     if (!goals?.length) {
       if (activeGoalId) {
@@ -29,15 +48,32 @@ export const GoalsScreen = () => {
       return;
     }
 
+    setGoals(goals);
+
     const hasSelectedGoal = goals.some((goal: any) => goal._id === activeGoalId);
     if (!hasSelectedGoal) {
       setActiveGoalId(goals[0]._id);
     }
-  }, [activeGoalId, goals, setActiveGoalId]);
+  }, [activeGoalId, goals, setActiveGoalId, setGoals]);
 
   const handleAddGoal = () => {
     // Navigates directly into the onboarding stack to establish a new goal
     navigation.navigate('OnboardingStack');
+  };
+
+  const handleDeleteGoal = (goal: any) => {
+    Alert.alert(
+      'Delete Goal',
+      `Delete "${goal.title}"? Your roadmap will be removed from the app, but this won't affect your other goals.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteGoalMutation.mutate(goal._id),
+        },
+      ]
+    );
   };
 
   const renderEmpty = () => (
@@ -76,10 +112,12 @@ export const GoalsScreen = () => {
               <GoalCard 
                 key={goal._id} 
                 goal={goal} 
+                deleting={deleteGoalMutation.isPending && deleteGoalMutation.variables === goal._id}
                 onPress={() => {
                   setActiveGoalId(goal._id);
                   navigation.navigate('RoadmapScreen', { goalId: goal._id });
-                }} 
+                }}
+                onDelete={() => handleDeleteGoal(goal)}
               />
             ))}
           </View>

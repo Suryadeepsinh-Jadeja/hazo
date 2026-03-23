@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { ChevronLeft } from 'lucide-react-native';
@@ -7,13 +7,14 @@ import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 
 type Message = { id: string, text: string, isUser: boolean, isTyping?: boolean };
+type QuestionConfig = { field_name: string; question_text: string };
 
-const DEFAULT_QUESTIONS = [
-  "What is your target timeline?",
-  "What is your prior knowledge or experience in this field?",
-  "How many hours can you dedicate daily?",
-  "What is your budget for learning materials?",
-  "Any specific external materials you want to use? (Optional)"
+const DEFAULT_QUESTIONS: QuestionConfig[] = [
+  { field_name: 'timeline', question_text: "What is your target timeline?" },
+  { field_name: 'priorKnowledge', question_text: "What is your prior knowledge or experience in this field?" },
+  { field_name: 'dailyHours', question_text: "How many hours can you dedicate daily?" },
+  { field_name: 'budget', question_text: "What is your budget for learning materials?" },
+  { field_name: 'externalMaterials', question_text: "Any specific external materials you want to use? (Optional)" }
 ];
 
 export const QuestionsScreen = () => {
@@ -25,8 +26,28 @@ export const QuestionsScreen = () => {
   const [currentQIndex, setCurrentQIndex] = useState(0);
   const [inputText, setInputText] = useState('');
   const [inputType, setInputType] = useState<'text' | 'numeric' | 'budget'>('text');
+  const [q6FieldName, setQ6FieldName] = useState('domainSpecificAnswer');
   
   const flatListRef = useRef<FlatList>(null);
+  const questionConfigs = useMemo<QuestionConfig[]>(() => {
+    if (backendQuestions?.length >= 5) {
+      return backendQuestions.map((question: any, index: number) => {
+        if (typeof question === 'string') {
+          return {
+            field_name: `q${index + 1}`,
+            question_text: question,
+          };
+        }
+
+        return {
+          field_name: question.field_name || `q${index + 1}`,
+          question_text: question.question_text || question.label || question.question || DEFAULT_QUESTIONS[index]?.question_text || `Question ${index + 1}`,
+        };
+      });
+    }
+
+    return DEFAULT_QUESTIONS;
+  }, [backendQuestions]);
 
   useEffect(() => {
     askNextQuestion();
@@ -45,16 +66,13 @@ export const QuestionsScreen = () => {
 
     setTimeout(async () => {
       let qText = '';
-      // Use backend questions if available, else fall back to defaults
-      const questionList = backendQuestions?.length >= 5
-        ? backendQuestions.map((q: any) => typeof q === 'string' ? q : q.label || q.question)
-        : DEFAULT_QUESTIONS;
 
       if (currentQIndex < 5) {
-        qText = questionList[currentQIndex] || DEFAULT_QUESTIONS[currentQIndex];
-        
-        if (currentQIndex === 2) setInputType('numeric');
-        else if (currentQIndex === 3) setInputType('budget');
+        qText = questionConfigs[currentQIndex]?.question_text || DEFAULT_QUESTIONS[currentQIndex]?.question_text;
+
+        const currentFieldName = questionConfigs[currentQIndex]?.field_name;
+        if (currentFieldName === 'budget') setInputType('budget');
+        else if (['dailyHours', 'timelineWeeks', 'hoursPerWeek'].includes(currentFieldName)) setInputType('numeric');
         else setInputType('text');
       } else {
         // Fetch custom AI Question 6 via POST
@@ -62,10 +80,12 @@ export const QuestionsScreen = () => {
           const answers: Record<string, string> = {};
           const userMsgs = messages.filter(m => m.isUser);
           userMsgs.forEach((m, idx) => {
-            answers[`q${idx + 1}`] = m.text;
+            const fieldName = questionConfigs[idx]?.field_name || `q${idx + 1}`;
+            answers[fieldName] = m.text;
           });
           const res = await api.post('/api/v1/goals/onboard/q6', { session_id: sessionId, answers });
           qText = res.data.question || "Lastly, what do you feel is your biggest obstacle right now?";
+          setQ6FieldName(res.data.field_name || 'domainSpecificAnswer');
         } catch {
           qText = "Lastly, what do you feel is your biggest obstacle right now?";
         }
@@ -96,7 +116,10 @@ export const QuestionsScreen = () => {
       const userAnswers = messages.filter(m => m.isUser).map(m => m.text);
       const allAnswers: Record<string, string> = {};
       userAnswers.forEach((a, idx) => {
-        allAnswers[`q${idx + 1}`] = a;
+        const fieldName = idx < questionConfigs.length
+          ? questionConfigs[idx]?.field_name || `q${idx + 1}`
+          : q6FieldName;
+        allAnswers[fieldName] = a;
       });
       await api.post('/api/v1/goals/onboard/complete', { session_id: sessionId, all_answers: allAnswers });
     } catch (e) {

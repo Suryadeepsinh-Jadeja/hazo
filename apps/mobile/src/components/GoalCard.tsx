@@ -1,10 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Flame } from 'lucide-react-native';
+import { Flame, Trash2 } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 
 export interface GoalCardProps {
   goal: {
+    _id?: string;
     title: string;
     current_day_index: number;
     total_days: number;
@@ -12,9 +13,11 @@ export interface GoalCardProps {
     timeline_target?: string;
   };
   onPress: () => void;
+  onDelete?: () => void;
+  deleting?: boolean;
 }
 
-export const GoalCard = ({ goal, onPress }: GoalCardProps) => {
+export const GoalCard = ({ goal, onPress, onDelete, deleting = false }: GoalCardProps) => {
   const currentDay = Math.min((goal.current_day_index || 0) + 1, goal.total_days || 1);
   const targetDate = goal.timeline_target
     ? new Date(goal.timeline_target).toLocaleDateString()
@@ -23,7 +26,7 @@ export const GoalCard = ({ goal, onPress }: GoalCardProps) => {
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.header}>
-        <Text style={styles.title} numberOfLines={1}>{goal.title}</Text>
+        <Text style={styles.title} numberOfLines={2}>{goal.title}</Text>
         <View style={[
             styles.statusBadge, 
             goal.status === 'active' && styles.activeBadge,
@@ -61,6 +64,18 @@ export const GoalCard = ({ goal, onPress }: GoalCardProps) => {
         <Flame color={theme.colors.accent.coralDark} size={16} strokeWidth={2.5} />
         <Text style={styles.streakText}>{currentDay}/{goal.total_days} complete</Text>
       </View>
+
+      {onDelete ? (
+        <TouchableOpacity
+          style={[styles.deleteButton, deleting && styles.deleteButtonDisabled]}
+          onPress={onDelete}
+          disabled={deleting}
+          activeOpacity={0.85}
+        >
+          <Trash2 color={theme.colors.danger.rose} size={16} />
+          <Text style={styles.deleteButtonText}>{deleting ? 'Deleting...' : 'Delete Goal'}</Text>
+        </TouchableOpacity>
+      ) : null}
     </TouchableOpacity>
   );
 };
@@ -81,18 +96,21 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: theme.spacing[20],
   },
   title: {
     flex: 1,
+    flexShrink: 1,
     fontFamily: theme.typography.fontDisplay,
     fontSize: theme.typography.fontSizes.lg,
     color: theme.colors.primary.ink,
     marginRight: theme.spacing[12],
     fontWeight: theme.typography.fontWeights.bold,
+    lineHeight: 34,
   },
   statusBadge: {
+    flexShrink: 0,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: theme.borderRadius.sm,
@@ -169,5 +187,27 @@ const styles = StyleSheet.create({
     color: theme.colors.accent.coralDark,
     marginLeft: 6,
     fontWeight: theme.typography.fontWeights.bold,
+  },
+  deleteButton: {
+    marginTop: theme.spacing[16],
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.neutral.cream,
+    borderWidth: 1,
+    borderColor: theme.colors.danger.rose,
+  },
+  deleteButtonDisabled: {
+    opacity: 0.6,
+  },
+  deleteButtonText: {
+    marginLeft: 6,
+    fontFamily: theme.typography.fontMono,
+    fontSize: theme.typography.fontSizes.xs,
+    fontWeight: theme.typography.fontWeights.bold,
+    color: theme.colors.danger.rose,
   },
 });

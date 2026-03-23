@@ -33,7 +33,13 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
 from core.auth import get_current_user
-from db.database import get_goals_col, get_skills_col, get_users_col
+from db.database import (
+    get_goals_col,
+    get_mentor_sessions_col,
+    get_skills_col,
+    get_tasks_col,
+    get_users_col,
+)
 from db.models import GoalDB, GoalIntake, Phase, Resource, SkillDB, Topic, UserDB
 
 # Add the repo root to the path so `packages` is importable from apps/api
@@ -273,6 +279,91 @@ def _get_questions_for_domain(domain: str) -> List[Dict[str, str]]:
     return DOMAIN_QUESTIONS.get(resolved, DOMAIN_QUESTIONS["other"])
 
 
+def _normalise_onboarding_answers(session: dict, answers: dict) -> Dict[str, Any]:
+    """Map legacy q1/q2... answer keys onto real onboarding field names."""
+    if not isinstance(answers, dict):
+        return {}
+
+    questions = session.get("questions") or []
+    q6_field_name = (session.get("q6") or {}).get("field_name")
+    normalised: Dict[str, Any] = {}
+
+    for key, value in answers.items():
+        mapped_key = key
+        match = re.fullmatch(r"q(\d+)", str(key))
+        if match:
+            question_index = int(match.group(1)) - 1
+            if 0 <= question_index < len(questions):
+                mapped_key = questions[question_index].get("field_name") or key
+            elif question_index == len(questions) and q6_field_name:
+                mapped_key = q6_field_name
+        normalised[mapped_key] = value
+
+    return normalised
+
+
+def _derive_timeline_days(all_answers: Dict[str, Any]) -> int:
+    """Best-effort timeline parser with an 8-week fallback."""
+    raw_timeline_weeks = all_answers.get("timelineWeeks")
+    if raw_timeline_weeks not in (None, ""):
+        try:
+            return max(1, int(float(str(raw_timeline_weeks).strip()) * 7))
+        except ValueError:
+            pass
+
+    raw_timeline = str(all_answers.get("timeline", "")).strip().lower()
+    if raw_timeline:
+        match = re.search(r"(\d+(?:\.\d+)?)\s*(day|days|week|weeks|month|months|year|years)", raw_timeline)
+        if match:
+            value = float(match.group(1))
+            unit = match.group(2)
+            if unit.startswith("day"):
+                return max(1, int(round(value)))
+            if unit.startswith("week"):
+                return max(1, int(round(value * 7)))
+            if unit.startswith("month"):
+                return max(1, int(round(value * 30)))
+            if unit.startswith("year"):
+                return max(1, int(round(value * 365)))
+
+        number_only = re.search(r"(\d+(?:\.\d+)?)", raw_timeline)
+        if number_only:
+            return max(1, int(round(float(number_only.group(1)) * 7)))
+
+    return 56
+
+
+def _clamp_roadmap_to_timeline(roadmap_data: Dict[str, Any], timeline_days: int) -> Dict[str, Any]:
+    """Trim roadmap topics so the saved plan does not exceed the requested timeline."""
+    remaining_days = max(1, timeline_days)
+    clamped_phases: List[Dict[str, Any]] = []
+
+    for phase in roadmap_data.get("phases", []):
+        if remaining_days <= 0:
+            break
+
+        phase_topics = list(phase.get("topics", []))
+        kept_topics = phase_topics[:remaining_days]
+        if not kept_topics:
+            continue
+
+        clamped_phases.append(
+            {
+                **phase,
+                "topics": kept_topics,
+                "duration_days": len(kept_topics),
+            }
+        )
+        remaining_days -= len(kept_topics)
+
+    total_topics = sum(len(phase.get("topics", [])) for phase in clamped_phases)
+    roadmap_data["phases"] = clamped_phases
+    roadmap_data["total_topics"] = total_topics
+    roadmap_data["total_days"] = total_topics
+    roadmap_data["total_phases"] = len(clamped_phases)
+    return roadmap_data
+
+
 async def _get_redis_json(key: str) -> Optional[dict]:
     rdb = get_redis()
     raw = await rdb.get(key)
@@ -292,9 +383,42 @@ async def _del_redis(key: str) -> None:
     await rdb.delete(key)
 
 
+def _goal_total_days(goal_doc: dict) -> int:
+    max_day_index = -1
+    topic_count = 0
+
+    for phase in goal_doc.get("phases", []):
+        for topic in phase.get("topics", []):
+            topic_count += 1
+            day_index = topic.get("day_index")
+            if isinstance(day_index, int):
+                max_day_index = max(max_day_index, day_index)
+
+    if max_day_index >= 0:
+        return max_day_index + 1
+    if topic_count > 0:
+        return topic_count
+    return max(1, int(goal_doc.get("total_days") or 1))
+
+
+def _goal_timeline_target(goal_doc: dict, total_days: int) -> Any:
+    timeline_start = goal_doc.get("timeline_start")
+    if isinstance(timeline_start, str):
+        try:
+            timeline_start = datetime.fromisoformat(timeline_start)
+        except ValueError:
+            timeline_start = None
+
+    if isinstance(timeline_start, datetime):
+        return timeline_start + timedelta(days=max(total_days, 1))
+
+    return goal_doc.get("timeline_target")
+
+
 def _make_daily_task_card(goal_doc: dict, user_id: str) -> dict:
     """Build a DailyTaskCard from a GoalDB document dict."""
     current_day = goal_doc.get("current_day_index", 0)
+    total_days = _goal_total_days(goal_doc)
     pending_topics = []
     for phase in goal_doc.get("phases", []):
         for topic in phase.get("topics", []):
@@ -305,6 +429,7 @@ def _make_daily_task_card(goal_doc: dict, user_id: str) -> dict:
         "goal_title": goal_doc.get("title", ""),
         "day_index": current_day,
         "topics": pending_topics,
+        "total_days": total_days,
         "generated_at": datetime.utcnow().isoformat(),
     }
 
@@ -636,7 +761,7 @@ async def _generate_roadmap_background(
 
         # ── b. Build profile and generate roadmap ──────────────────────────
         daily_hours = float(all_answers.get("dailyHours", 2))
-        timeline_days = int(all_answers.get("timelineWeeks", 8)) * 7
+        timeline_days = _derive_timeline_days(all_answers)
 
         # Academic exams may give a concrete date; try to derive days from it.
         exam_date_raw: Optional[str] = all_answers.get("examNameAndDate", "")
@@ -663,7 +788,10 @@ async def _generate_roadmap_background(
         }
 
         raw_roadmap = await call_gemini(roadmap_generation_prompt(profile), max_tokens=65536)
-        roadmap_data = _extract_roadmap_json(raw_roadmap)
+        roadmap_data = _clamp_roadmap_to_timeline(
+            _extract_roadmap_json(raw_roadmap),
+            timeline_days,
+        )
 
         # ── c. Resource curation + URL verification ────────────────────────
         budget = profile["budget"]
@@ -969,7 +1097,7 @@ async def onboard_q6(
         raise HTTPException(status_code=404, detail="Onboarding session not found or expired.")
 
     # Merge answers
-    session["answers"].update(body.answers)
+    session["answers"].update(_normalise_onboarding_answers(session, body.answers))
 
     # Generate Q6
     try:
@@ -1016,7 +1144,10 @@ async def onboard_complete(
     goal_text = session["goal_text"]
 
     # Merge all answers (Q1–Q5 + Q6)
-    all_answers: dict = {**session.get("answers", {}), **body.all_answers}
+    all_answers: dict = {
+        **session.get("answers", {}),
+        **_normalise_onboarding_answers(session, body.all_answers),
+    }
 
     background_tasks.add_task(
         _generate_roadmap_background,
@@ -1059,20 +1190,13 @@ async def list_goals(current_user: UserDB = Depends(get_current_user)):
     goals_col = get_goals_col()
     cursor = goals_col.find(
         {"user_id": str(current_user.id), "status": "active"},
-        {
-            "_id": 1,
-            "title": 1,
-            "domain": 1,
-            "status": 1,
-            "current_day_index": 1,
-            "total_days": 1,
-            "timeline_target": 1,
-            "created_at": 1,
-        },
     )
     goals = []
     async for doc in cursor:
         doc["_id"] = str(doc["_id"])
+        computed_total_days = _goal_total_days(doc)
+        doc["total_days"] = computed_total_days
+        doc["timeline_target"] = _goal_timeline_target(doc, computed_total_days)
         goals.append(doc)
     return goals
 
@@ -1096,7 +1220,69 @@ async def get_goal(
         raise HTTPException(status_code=404, detail="Goal not found.")
 
     doc["_id"] = str(doc["_id"])
+    computed_total_days = _goal_total_days(doc)
+    doc["total_days"] = computed_total_days
+    doc["timeline_target"] = _goal_timeline_target(doc, computed_total_days)
     return doc
+
+
+# ── DELETE /{goal_id} ─────────────────────────────────────────────────────
+
+@router.delete("/{goal_id}")
+async def delete_goal(
+    goal_id: str,
+    current_user: UserDB = Depends(get_current_user),
+):
+    """Soft-delete a goal and clean up goal-scoped cached/supporting data."""
+    goals_col = get_goals_col()
+    skills_col = get_skills_col()
+    tasks_col = get_tasks_col()
+    mentor_col = get_mentor_sessions_col()
+
+    try:
+        oid = ObjectId(goal_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid goal_id format.")
+
+    goal_doc = await goals_col.find_one({"_id": oid, "user_id": str(current_user.id)})
+    if goal_doc is None:
+        raise HTTPException(status_code=404, detail="Goal not found.")
+
+    await goals_col.update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "status": "abandoned",
+                "updated_at": datetime.utcnow(),
+            }
+        },
+    )
+
+    await skills_col.delete_many(
+        {
+            "user_id": str(current_user.id),
+            "goal_id": goal_id,
+        }
+    )
+    await tasks_col.update_many(
+        {
+            "user_id": str(current_user.id),
+            "linked_goal_id": goal_id,
+        },
+        {
+            "$set": {"linked_goal_id": None},
+        },
+    )
+    await mentor_col.delete_many(
+        {
+            "user_id": {"$in": [str(current_user.id), current_user.supabase_id]},
+            "goal_id": goal_id,
+        }
+    )
+
+    await _del_redis(f"daily:task:{current_user.id}:{goal_id}")
+
+    return {"message": "Goal deleted."}
 
 
 # ── GET /{goal_id}/today ──────────────────────────────────────────────────
