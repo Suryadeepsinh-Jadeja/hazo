@@ -199,6 +199,7 @@ def roadmap_generation_prompt(profile: dict) -> str:
     external_materials = profile.get("external_materials", "")
     domain_specific_answer = profile.get("domain_specific_answer", "")
     max_topic_minutes = int(daily_hours * 60 * 1.2)
+    desired_phase_count = min(6, max(3, timeline_days // 10))
 
     return f"""You are an elite curriculum designer building a concise, focused learning roadmap for Stride.
 
@@ -217,6 +218,7 @@ Domain-specific context: {domain_specific_answer if domain_specific_answer else 
 
 1. PREREQUISITE ORDERING IS MANDATORY.
    Never schedule an advanced topic before its foundational prerequisites.
+   The roadmap should feel like a serious mentor designed it, not a generic syllabus dump.
 
 2. NO topic may exceed {max_topic_minutes} minutes (daily_hours × 60 × 1.2).
    If a topic is bigger, split it into sub-topics.
@@ -224,15 +226,31 @@ Domain-specific context: {domain_specific_answer if domain_specific_answer else 
 3. BE CONCISE. Do NOT include redundant, obvious, or padded topics.
    Every topic must be genuinely essential for achieving the goal.
    Prefer depth over breadth. Cut topics a learner could skip.
+   Do not waste days on vague filler like "revision", "practice more", or "overview"
+   unless it is tied to a concrete deliverable or assessment.
 
-4. resource_queries: EXACTLY 2 per topic, highly specific.
+4. MAKE THE ROADMAP EFFECTIVE, NOT JUST COMPLETE.
+   Each phase must have a clear job to do.
+   Each topic must move the learner measurably closer to the goal.
+   Prefer concrete, outcome-oriented topics over broad textbook chapter names.
+   GOOD: "Solve 8 two-pointer problems with shrinking window patterns"
+   BAD: "Learn two pointers"
+
+5. resource_queries: EXACTLY 2 per topic, highly specific.
    GOOD: "Abdul Bari stack data structure lecture"
    BAD:  "stack tutorial"
+   Queries should be tailored to the exact scope of the topic, not the whole phase.
 
-5. ai_note: ONE sentence max. Explain WHY this topic comes now.
+6. ai_note: ONE sentence max. Explain WHY this topic comes now.
    Reference the previous topic or prerequisite.
 
-6. DOMAIN-SPECIFIC ORDERING:
+7. PHASE DESIGN:
+   Create about {desired_phase_count} phases, unless the goal clearly needs fewer.
+   Each phase should represent a meaningful milestone.
+   Front-load foundations, then guided practice, then applied work/mock evaluation.
+   Phase durations must be realistic and proportional to topic difficulty.
+
+8. DOMAIN-SPECIFIC ORDERING:
    - competitive_programming: Arrays → Strings → Sorting → Hashing →
      LinkedList → Stacks/Queues → Trees → Graphs → DP → Advanced
    - academic_exam: Follow the syllabus unit order if provided.
@@ -243,7 +261,12 @@ Domain-specific context: {domain_specific_answer if domain_specific_answer else 
    - language_learning: Phonetics → grammar → vocabulary → reading → writing → conversation
    - swe_career: DSA → system design → behavioural → mock interviews
 
-7. Total duration of all phases must equal {timeline_days} days.
+9. PERSONALISATION:
+   Use the learner's prior knowledge, budget, timeline, and any supplied materials.
+   If external materials were provided, align the roadmap to them where sensible.
+   If the learner is time-constrained, prioritize the highest-yield sequence.
+
+10. Total duration of all phases must equal {timeline_days} days.
 
 ── OUTPUT FORMAT ────────────────────────────────────────────
 
@@ -284,14 +307,39 @@ No markdown fences, no explanation — just the XML-wrapped JSON.
 # ── 4. Resource Curation ────────────────────────────────────────────────────
 
 
-def resource_curation_prompt(topic_title: str, domain: str, budget: str) -> str:
+def resource_curation_prompt(
+    topic_title: str,
+    domain: str,
+    budget: str,
+    *,
+    goal_title: str = "",
+    phase_title: str = "",
+    phase_topics: list[str] | None = None,
+    previous_topic_title: str = "",
+    next_topic_title: str = "",
+    prior_knowledge: str = "",
+    domain_specific_answer: str = "",
+) -> str:
     """Curate 3–4 real, high-confidence resources for a specific topic."""
+    phase_topics = phase_topics or []
+    phase_topic_lines = "\n".join(f"  - {title}" for title in phase_topics[:8]) if phase_topics else "  (not provided)"
+
     return f"""You are a learning-resource curator.  Find 3–4 real, specific
 resources for the topic below that you are HIGHLY CONFIDENT actually exist.
 
-── TOPIC ────────────────────────────────────────────────────
+── GOAL + PHASE CONTEXT ─────────────────────────────────────
 
-Title: "{topic_title}"
+Goal: "{goal_title or topic_title}"
+Current phase: "{phase_title or 'Current phase'}"
+Phase topics:
+{phase_topic_lines}
+
+Previous topic: "{previous_topic_title or 'none'}"
+Current topic: "{topic_title}"
+Next topic: "{next_topic_title or 'none'}"
+Learner level: "{prior_knowledge or 'unknown'}"
+Domain-specific learner context: "{domain_specific_answer or 'none'}"
+
 Domain: {domain}
 Budget: {budget}
 
@@ -339,6 +387,11 @@ Only include URLs you are CERTAIN exist as of late 2025.
 If you are not sure a URL is valid, OMIT IT entirely.
 It is better to return 2 solid resources than 4 with broken links.
 
+The resources must fit THIS topic's role inside THIS phase.
+Do not return generic beginner links if the topic is mid-phase or advanced.
+Do not return resources that cover the entire field when the topic is narrow.
+Prefer canonical, high-signal resources a serious learner would actually use.
+
 For coding practice resources:
 - ONLY use these domains: leetcode.com, codechef.com, codeforces.com, cses.fi, atcoder.jp
 - Mark those as type = "practice"
@@ -375,11 +428,34 @@ Valid types: video | article | course | book | practice | tool | documentation
 """
 
 
-def concept_resource_curation_prompt(topic_title: str, domain: str, budget: str) -> str:
+def concept_resource_curation_prompt(
+    topic_title: str,
+    domain: str,
+    budget: str,
+    *,
+    goal_title: str = "",
+    phase_title: str = "",
+    phase_topics: list[str] | None = None,
+    previous_topic_title: str = "",
+    next_topic_title: str = "",
+    prior_knowledge: str = "",
+    domain_specific_answer: str = "",
+) -> str:
     """Curate concept-learning materials with a strong preference for valid videos."""
+    phase_topics = phase_topics or []
+    phase_topic_lines = "\n".join(f"  - {title}" for title in phase_topics[:8]) if phase_topics else "  (not provided)"
+
     return f"""You are a learning-resource curator. Find concept-learning resources for this topic.
 
-Topic: "{topic_title}"
+Goal: "{goal_title or topic_title}"
+Current phase: "{phase_title or 'Current phase'}"
+Phase topics:
+{phase_topic_lines}
+Previous topic: "{previous_topic_title or 'none'}"
+Current topic: "{topic_title}"
+Next topic: "{next_topic_title or 'none'}"
+Learner level: "{prior_knowledge or 'unknown'}"
+Domain-specific learner context: "{domain_specific_answer or 'none'}"
 Domain: {domain}
 Budget: {budget}
 
@@ -387,6 +463,8 @@ Goal:
 - Return 2 or 3 HIGH-CONFIDENCE concept resources.
 - At least 2 MUST be YouTube videos when possible.
 - Prefer established channels and canonical explainers.
+- Make the depth match where this topic sits in the phase.
+- Avoid generic introductions if the surrounding phase is already beyond basics.
 
 For coding / DSA topics:
 - Strongly prefer NeetCode, Striver, Abdul Bari, or freeCodeCamp.
@@ -414,17 +492,42 @@ Return a JSON array only:
 """
 
 
-def supporting_resource_curation_prompt(topic_title: str, domain: str, budget: str) -> str:
+def supporting_resource_curation_prompt(
+    topic_title: str,
+    domain: str,
+    budget: str,
+    *,
+    goal_title: str = "",
+    phase_title: str = "",
+    phase_topics: list[str] | None = None,
+    previous_topic_title: str = "",
+    next_topic_title: str = "",
+    prior_knowledge: str = "",
+    domain_specific_answer: str = "",
+) -> str:
     """Curate non-video support resources such as practice links, docs, or notes."""
+    phase_topics = phase_topics or []
+    phase_topic_lines = "\n".join(f"  - {title}" for title in phase_topics[:8]) if phase_topics else "  (not provided)"
+
     return f"""You are a learning-resource curator. Find support resources for this topic.
 
-Topic: "{topic_title}"
+Goal: "{goal_title or topic_title}"
+Current phase: "{phase_title or 'Current phase'}"
+Phase topics:
+{phase_topic_lines}
+Previous topic: "{previous_topic_title or 'none'}"
+Current topic: "{topic_title}"
+Next topic: "{next_topic_title or 'none'}"
+Learner level: "{prior_knowledge or 'unknown'}"
+Domain-specific learner context: "{domain_specific_answer or 'none'}"
 Domain: {domain}
 Budget: {budget}
 
 Goal:
 - Return 2 or 3 HIGH-CONFIDENCE support resources.
 - These MUST be non-video links.
+- The links should be directly usable for this topic's practice or reference work.
+- Prefer specific pages over broad landing pages.
 
 For coding / DSA topics:
 - Prefer direct problem links from LeetCode, CodeChef, Codeforces, CSES, or AtCoder.
