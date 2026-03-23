@@ -375,6 +375,84 @@ Valid types: video | article | course | book | practice | tool | documentation
 """
 
 
+def concept_resource_curation_prompt(topic_title: str, domain: str, budget: str) -> str:
+    """Curate concept-learning materials with a strong preference for valid videos."""
+    return f"""You are a learning-resource curator. Find concept-learning resources for this topic.
+
+Topic: "{topic_title}"
+Domain: {domain}
+Budget: {budget}
+
+Goal:
+- Return 2 or 3 HIGH-CONFIDENCE concept resources.
+- At least 2 MUST be YouTube videos when possible.
+- Prefer established channels and canonical explainers.
+
+For coding / DSA topics:
+- Strongly prefer NeetCode, Striver, Abdul Bari, or freeCodeCamp.
+- Use direct YouTube watch URLs only.
+
+For non-coding topics:
+- Prefer the best available video explainers and one strong article/doc if helpful.
+
+Rules:
+- Only include URLs you are highly confident exist.
+- If unsure about a video URL, omit it.
+- Do not include practice problem links here.
+- It is better to return 2 solid links than 5 uncertain ones.
+
+Return a JSON array only:
+[
+  {{
+    "type": "video",
+    "title": "Striver — Topic Explanation",
+    "url": "https://www.youtube.com/watch?v=example",
+    "source": "YouTube / Striver",
+    "is_free": true
+  }}
+]
+"""
+
+
+def supporting_resource_curation_prompt(topic_title: str, domain: str, budget: str) -> str:
+    """Curate non-video support resources such as practice links, docs, or notes."""
+    return f"""You are a learning-resource curator. Find support resources for this topic.
+
+Topic: "{topic_title}"
+Domain: {domain}
+Budget: {budget}
+
+Goal:
+- Return 2 or 3 HIGH-CONFIDENCE support resources.
+- These MUST be non-video links.
+
+For coding / DSA topics:
+- Prefer direct problem links from LeetCode, CodeChef, Codeforces, CSES, or AtCoder.
+- If helpful, one documentation/article link is allowed, but at least 2 should be practice-ready when possible.
+- Never use random blogs or low-quality practice sites.
+
+For non-coding topics:
+- Prefer official docs, strong articles, notes, or high-quality exercises.
+
+Rules:
+- Only include URLs you are highly confident exist.
+- Do not include YouTube links here.
+- Avoid homepages, listing pages, and search pages.
+- Prefer links the learner can use immediately.
+
+Return a JSON array only:
+[
+  {{
+    "type": "practice",
+    "title": "LeetCode — Two Sum",
+    "url": "https://leetcode.com/problems/two-sum/",
+    "source": "LeetCode",
+    "is_free": true
+  }}
+]
+"""
+
+
 # ── 5. Subtask Generation ───────────────────────────────────────────────────
 
 

@@ -43,11 +43,13 @@ if _REPO_ROOT not in sys.path:
 
 from packages.ai.gemini_client import call_gemini, call_gemini_json
 from packages.ai.prompts import (
+    concept_resource_curation_prompt,
     domain_classify_prompt,
     q6_prompt,
     replan_prompt,
     resource_curation_prompt,
     roadmap_generation_prompt,
+    supporting_resource_curation_prompt,
 )
 
 load_dotenv()
@@ -349,12 +351,79 @@ async def _curate_resources_for_topic(
         resources_raw = []
 
     async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as client:
-        return await _verify_and_split_resources(
+        verified_payload = await _verify_and_split_resources(
             client=client,
             resources_raw=resources_raw,
             topic_title=topic_title,
             domain=domain,
         )
+
+        needs_more_concepts = len(verified_payload["resources"]) < 2
+        needs_more_support = len(verified_payload["practice_links"]) < 2
+
+        if needs_more_concepts:
+            try:
+                concept_raw = await call_gemini_json(
+                    concept_resource_curation_prompt(topic_title, domain, budget)
+                )
+                if isinstance(concept_raw, list):
+                    concept_payload = await _verify_and_split_resources(
+                        client=client,
+                        resources_raw=concept_raw,
+                        topic_title=topic_title,
+                        domain=domain,
+                    )
+                    verified_payload = _merge_resource_payloads(
+                        verified_payload,
+                        concept_payload,
+                    )
+            except Exception as exc:
+                logger.warning("Concept resource fallback failed for %s: %s", topic_title, exc)
+
+        if needs_more_support:
+            try:
+                support_raw = await call_gemini_json(
+                    supporting_resource_curation_prompt(topic_title, domain, budget)
+                )
+                if isinstance(support_raw, list):
+                    support_payload = await _verify_and_split_resources(
+                        client=client,
+                        resources_raw=support_raw,
+                        topic_title=topic_title,
+                        domain=domain,
+                    )
+                    verified_payload = _merge_resource_payloads(
+                        verified_payload,
+                        support_payload,
+                    )
+            except Exception as exc:
+                logger.warning("Support resource fallback failed for %s: %s", topic_title, exc)
+
+        return {
+            "resources": verified_payload["resources"][:4],
+            "practice_links": verified_payload["practice_links"][:4],
+        }
+
+
+def _merge_resource_payloads(
+    base_payload: Dict[str, List[dict]],
+    extra_payload: Dict[str, List[dict]],
+) -> Dict[str, List[dict]]:
+    def _dedupe(items: List[dict]) -> List[dict]:
+        seen_urls: set[str] = set()
+        merged: List[dict] = []
+        for item in items:
+            url = item.get("url", "")
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            merged.append(item)
+        return merged
+
+    return {
+        "resources": _dedupe((base_payload.get("resources") or []) + (extra_payload.get("resources") or [])),
+        "practice_links": _dedupe((base_payload.get("practice_links") or []) + (extra_payload.get("practice_links") or [])),
+    }
 
 
 _TRUSTED_CODING_PRACTICE_DOMAINS = (

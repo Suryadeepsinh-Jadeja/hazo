@@ -1,7 +1,7 @@
 import React, { useCallback, useState, useEffect, memo, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import LinearGradient from 'react-native-linear-gradient';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, withRepeat, withDelay, Easing } from 'react-native-reanimated';
 import { PlayCircle, Flame, Clock, BookOpen, CheckCircle2 } from 'lucide-react-native';
@@ -10,7 +10,6 @@ import { Linking } from 'react-native';
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
-import { useGoalStore } from '../../store/goalStore';
 
 // --- Types ---
 interface Resource {
@@ -41,6 +40,12 @@ interface DailyTaskCard {
   goal_title: string;
 }
 
+interface GoalSummary {
+  _id: string;
+  title: string;
+  status: string;
+}
+
 interface PersonalTask {
   _id: string;
   raw_input: string;
@@ -48,6 +53,22 @@ interface PersonalTask {
   priority?: 'low' | 'medium' | 'high';
   status: string;
 }
+
+const getTodayDisplayMaterials = (topic?: Topic) => {
+  if (!topic) {
+    return [];
+  }
+
+  const conceptVideos = (topic.resources || [])
+    .filter((resource) => resource.type === 'video')
+    .slice(0, 2);
+  const supportingLinks = [
+    ...(topic.practice_links || []),
+    ...(topic.resources || []).filter((resource) => resource.type !== 'video'),
+  ].slice(0, 2);
+
+  return [...conceptVideos, ...supportingLinks];
+};
 
 const getTomorrowEnd = () => {
   const tomorrowEnd = new Date();
@@ -141,11 +162,10 @@ export const TodayScreen = () => {
   const navigation = useNavigation<any>();
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
-  const { activeGoalId } = useGoalStore();
 
   const [confettiActive, setConfettiActive] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
-  const [simplifyModalVisible, setSimplifyModalVisible] = useState(false);
+  const [simplifyTarget, setSimplifyTarget] = useState<{ goalId: string; topicId: string } | null>(null);
 
   // Time-based Greeting
   const greeting = useMemo(() => {
@@ -157,21 +177,46 @@ export const TodayScreen = () => {
 
   // Fetch Data
   const {
-    data: taskCard,
-    isLoading: isGoalLoading,
-    isError: isGoalError,
-    refetch: refetchGoal,
-    isRefetching: isGoalRefetching,
-  } = useQuery<DailyTaskCard>({
-    queryKey: ['todayTask', activeGoalId],
+    data: goals = [],
+    isLoading: isGoalsLoading,
+    refetch: refetchGoals,
+    isRefetching: isGoalsRefetching,
+  } = useQuery<GoalSummary[]>({
+    queryKey: ['goals'],
     queryFn: async () => {
-      const res = await api.get(`/api/v1/goals/${activeGoalId}/today`);
+      const res = await api.get('/api/v1/goals');
       return res.data;
     },
-    enabled: !!activeGoalId,
   });
 
-  const primaryTopic = taskCard?.topics?.[0];
+  const activeGoals = useMemo(
+    () => goals.filter((goal) => goal.status === 'active'),
+    [goals]
+  );
+
+  const todayGoalQueries = useQueries({
+    queries: activeGoals.map((goal) => ({
+      queryKey: ['todayTask', goal._id],
+      queryFn: async (): Promise<DailyTaskCard> => {
+        const res = await api.get(`/api/v1/goals/${goal._id}/today`);
+        return res.data;
+      },
+      enabled: !!goal._id,
+    })),
+  });
+
+  const goalCards = useMemo(
+    () =>
+      activeGoals.map((goal, index) => ({
+        goal,
+        query: todayGoalQueries[index],
+        taskCard: todayGoalQueries[index]?.data as DailyTaskCard | undefined,
+        primaryTopic: (todayGoalQueries[index]?.data as DailyTaskCard | undefined)?.topics?.[0],
+      })),
+    [activeGoals, todayGoalQueries]
+  );
+
+  const isTodayGoalsRefetching = todayGoalQueries.some((query) => query.isRefetching);
 
   const {
     data: allTasks = [],
@@ -211,21 +256,22 @@ export const TodayScreen = () => {
   const refreshHome = useCallback(async () => {
     await Promise.all([
       refetchTasks(),
-      activeGoalId ? refetchGoal() : Promise.resolve(),
+      refetchGoals(),
+      ...todayGoalQueries.map((query) => query.refetch()),
     ]);
-  }, [activeGoalId, refetchGoal, refetchTasks]);
+  }, [refetchGoals, refetchTasks, todayGoalQueries]);
 
   // Mutations
   const completeMutation = useMutation({
-    mutationFn: async (topicId: string) => {
-      await api.post(`/api/v1/goals/${activeGoalId}/topics/${topicId}/complete`);
+    mutationFn: async ({ goalId, topicId }: { goalId: string; topicId: string }) => {
+      await api.post(`/api/v1/goals/${goalId}/topics/${topicId}/complete`);
     },
     onSuccess: () => {
       setConfettiActive(true);
       setToastVisible(true);
       setTimeout(() => setToastVisible(false), 3000);
       setTimeout(() => setConfettiActive(false), 3500);
-      queryClient.invalidateQueries({ queryKey: ['todayTask', activeGoalId] });
+      queryClient.invalidateQueries({ queryKey: ['todayTask'] });
       queryClient.invalidateQueries({ queryKey: ['goals'] });
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
       queryClient.invalidateQueries({ queryKey: ['userStats'] });
@@ -234,25 +280,25 @@ export const TodayScreen = () => {
   });
 
   const simplifyMutation = useMutation({
-    mutationFn: async (topicId: string) => {
-      await api.post(`/api/v1/goals/${activeGoalId}/topics/${topicId}/skip`);
+    mutationFn: async ({ goalId, topicId }: { goalId: string; topicId: string }) => {
+      await api.post(`/api/v1/goals/${goalId}/topics/${topicId}/skip`);
     },
     onSuccess: () => {
-      setSimplifyModalVisible(false);
-      queryClient.invalidateQueries({ queryKey: ['todayTask', activeGoalId] });
+      setSimplifyTarget(null);
+      queryClient.invalidateQueries({ queryKey: ['todayTask'] });
     }
   });
 
   // Handlers
-  const handleMarkDone = useCallback(() => {
-    if (primaryTopic?.topic_id) {
-      completeMutation.mutate(primaryTopic.topic_id);
+  const handleMarkDone = useCallback((goalId: string, topicId?: string) => {
+    if (topicId) {
+      completeMutation.mutate({ goalId, topicId });
     }
-  }, [completeMutation, primaryTopic?.topic_id]);
+  }, [completeMutation]);
 
-  const handleAskMentor = useCallback(() => {
-    navigation.navigate('Mentor', { goalId: activeGoalId });
-  }, [navigation, activeGoalId]);
+  const handleAskMentor = useCallback((goalId: string) => {
+    navigation.navigate('Mentor', { goalId });
+  }, [navigation]);
 
   const handleOpenLink = useCallback(async (url: string) => {
     const supported = await Linking.canOpenURL(url);
@@ -281,7 +327,7 @@ export const TodayScreen = () => {
     </View>
   );
 
-  if (activeGoalId && isGoalLoading && isTasksLoading) return renderSkeleton();
+  if (isGoalsLoading && isTasksLoading) return renderSkeleton();
 
   const confettiColors = [theme.colors.accent.coral, theme.colors.positive.sage, theme.colors.warning.amber, theme.colors.danger.rose];
 
@@ -291,7 +337,7 @@ export const TodayScreen = () => {
         contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl
-            refreshing={isGoalRefetching || isTasksRefetching}
+            refreshing={isGoalsRefetching || isTodayGoalsRefetching || isTasksRefetching}
             onRefresh={refreshHome}
             tintColor={theme.colors.accent.coral}
           />
@@ -306,92 +352,146 @@ export const TodayScreen = () => {
           </View>
         </View>
 
-        {activeGoalId && taskCard && (
-          <>
-            <View style={styles.progressContainer}>
-              <View style={styles.progressTextRow}>
-                <Text style={styles.phaseTitleText}>{taskCard.phase_title || taskCard.goal_title || 'Today'}</Text>
-                <Text style={styles.dayIndexText}>Day {(taskCard.day_index || 0) + 1} of {taskCard.total_days || '—'}</Text>
-              </View>
-              <View style={styles.progressBarBg}>
-                 <View style={[styles.progressBarFill, { width: `${Math.min(100, (((taskCard.day_index || 0) + 1) / Math.max(taskCard.total_days || 1, 1)) * 100)}%` }]} />
-              </View>
-            </View>
-
-            <View style={styles.heroCard}>
-              <View style={{ position: 'absolute', top: '50%', left: '50%', zIndex: 100 }} pointerEvents="none">
-                 {Array.from({ length: 20 }).map((_, i) => (
-                   <ConfettiParticle
-                     key={i}
-                     active={confettiActive}
-                     color={confettiColors[i % confettiColors.length]}
-                     angle={(Math.PI * 2 * i) / 20}
-                     distance={80 + Math.random() * 60}
-                     delay={Math.random() * 100}
-                   />
-                 ))}
-              </View>
-
-              <LinearGradient
-                colors={[theme.colors.accent.coral, theme.colors.primary.ink]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.heroGradientHeader}
-              >
-                <Text style={styles.phaseLabel}>TODAY'S TASK • DAY {(taskCard.day_index || 0) + 1}</Text>
-                <Text style={styles.topicTitle}>{primaryTopic?.title || 'No Tasks Today'}</Text>
-
-                <View style={styles.timeChip}>
-                  <Clock color={theme.colors.primary.ink} size={12} />
-                  <Text style={styles.timeChipText}>~{primaryTopic?.estimated_minutes || 0} min</Text>
-                </View>
-              </LinearGradient>
-
-              <View style={styles.heroBody}>
-                {primaryTopic?.ai_note && (
-                  <Text style={styles.aiNote}>"{primaryTopic.ai_note}"</Text>
-                )}
-
-                {primaryTopic?.resources?.slice(0, 2).map((res, i) => (
-                  <TouchableOpacity key={i} style={styles.resourceRow} onPress={() => handleOpenLink(res.url)}>
-                    {res.type === 'video' ? <PlayCircle color={theme.colors.primary.inkMuted} size={18} /> : <BookOpen color={theme.colors.primary.inkMuted} size={18} />}
-                    <Text style={styles.resourceText} numberOfLines={1}>{res.title}</Text>
-                  </TouchableOpacity>
-                ))}
-
-                <TouchableOpacity
-                  style={[styles.doneButton, completeMutation.isPending && { opacity: 0.7 }]}
-                  onPress={handleMarkDone}
-                  disabled={completeMutation.isPending || !primaryTopic?.topic_id}
-                >
-                  <Text style={styles.doneButtonText}>{completeMutation.isPending ? 'Completing...' : 'Mark as Done ✓'}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.ghostButton} onPress={handleAskMentor}>
-                  <Text style={styles.ghostButtonText}>Ask AI Mentor</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <TouchableOpacity style={styles.tooMuchLink} onPress={() => setSimplifyModalVisible(true)}>
-              <Text style={styles.tooMuchText}>Too much today?</Text>
-            </TouchableOpacity>
-
-            {taskCard.topics?.length > 1 && (
-              <View style={styles.tasksSection}>
-                <Text style={styles.sectionHeader}>Goal Tasks Coming Up ({taskCard.task_mode_count})</Text>
-                {taskCard.topics.slice(1).map((topic, i) => (
-                  <View key={topic.topic_id || i} style={styles.secondaryTopicCard}>
-                     <Text style={styles.secondaryTopicTitle}>{topic.title}</Text>
-                     <Text style={styles.secondaryTopicMins}>{topic.estimated_minutes} min</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </>
+        {goalCards.length > 0 && (
+          <View style={styles.tasksSection}>
+            <Text style={styles.sectionHeader}>Today Across Your Goals</Text>
+            <Text style={styles.sectionSubheader}>Each active goal gets its own daily task card here.</Text>
+          </View>
         )}
 
-        {!activeGoalId && (
+        {goalCards.map(({ goal, query, taskCard, primaryTopic }, goalIndex) => (
+          <View key={goal._id} style={styles.goalSection}>
+            {query?.isError ? (
+              <View style={styles.infoCard}>
+                <Text style={styles.infoCardTitle}>Couldn&apos;t load {goal.title}</Text>
+                <Text style={styles.infoCardBody}>
+                  Pull to refresh or open the goal directly from the Goals tab.
+                </Text>
+                <TouchableOpacity style={styles.secondaryButton} onPress={() => query.refetch()}>
+                  <Text style={styles.secondaryButtonText}>Retry Goal</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {taskCard ? (
+              <>
+                {(() => {
+                  const displayMaterials = getTodayDisplayMaterials(primaryTopic);
+
+                  return (
+                    <>
+                <View style={styles.progressContainer}>
+                  <View style={styles.progressTextRow}>
+                    <Text style={styles.phaseTitleText}>{taskCard.goal_title || goal.title}</Text>
+                    <Text style={styles.dayIndexText}>Day {(taskCard.day_index || 0) + 1} of {taskCard.total_days || '—'}</Text>
+                  </View>
+                  <View style={styles.progressBarBg}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        {
+                          width: `${Math.min(
+                            100,
+                            (((taskCard.day_index || 0) + 1) / Math.max(taskCard.total_days || 1, 1)) * 100
+                          )}%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.heroCard}>
+                  {goalIndex === 0 && confettiActive && (
+                    <View style={{ position: 'absolute', top: '50%', left: '50%', zIndex: 100 }} pointerEvents="none">
+                      {Array.from({ length: 20 }).map((_, i) => (
+                        <ConfettiParticle
+                          key={i}
+                          active={confettiActive}
+                          color={confettiColors[i % confettiColors.length]}
+                          angle={(Math.PI * 2 * i) / 20}
+                          distance={80 + Math.random() * 60}
+                          delay={Math.random() * 100}
+                        />
+                      ))}
+                    </View>
+                  )}
+
+                  <LinearGradient
+                    colors={[theme.colors.accent.coral, theme.colors.primary.ink]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.heroGradientHeader}
+                  >
+                    <Text style={styles.phaseLabel}>TODAY&apos;S TASK • DAY {(taskCard.day_index || 0) + 1}</Text>
+                    <Text style={styles.goalLabel}>{taskCard.goal_title || goal.title}</Text>
+                    <Text style={styles.topicTitle}>{primaryTopic?.title || 'No Tasks Today'}</Text>
+
+                    <View style={styles.timeChip}>
+                      <Clock color={theme.colors.primary.ink} size={12} />
+                      <Text style={styles.timeChipText}>~{primaryTopic?.estimated_minutes || 0} min</Text>
+                    </View>
+                  </LinearGradient>
+
+                  <View style={styles.heroBody}>
+                    {primaryTopic?.ai_note && (
+                      <Text style={styles.aiNote}>"{primaryTopic.ai_note}"</Text>
+                    )}
+
+                    {displayMaterials.map((res, i) => (
+                      <TouchableOpacity key={i} style={styles.resourceRow} onPress={() => handleOpenLink(res.url)}>
+                        {res.type === 'video' ? <PlayCircle color={theme.colors.primary.inkMuted} size={18} /> : <BookOpen color={theme.colors.primary.inkMuted} size={18} />}
+                        <Text style={styles.resourceText} numberOfLines={1}>{res.title}</Text>
+                      </TouchableOpacity>
+                    ))}
+
+                    <TouchableOpacity
+                      style={[styles.doneButton, completeMutation.isPending && { opacity: 0.7 }]}
+                      onPress={() => handleMarkDone(goal._id, primaryTopic?.topic_id)}
+                      disabled={completeMutation.isPending || !primaryTopic?.topic_id}
+                    >
+                      <Text style={styles.doneButtonText}>{completeMutation.isPending ? 'Completing...' : 'Mark as Done ✓'}</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.ghostButton} onPress={() => handleAskMentor(goal._id)}>
+                      <Text style={styles.ghostButtonText}>Ask AI Mentor</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.tooMuchLink}
+                  onPress={() => primaryTopic?.topic_id && setSimplifyTarget({ goalId: goal._id, topicId: primaryTopic.topic_id })}
+                >
+                  <Text style={styles.tooMuchText}>Too much today?</Text>
+                </TouchableOpacity>
+
+                {taskCard.topics?.length > 1 && (
+                  <View style={styles.tasksSection}>
+                    <Text style={styles.sectionHeader}>Coming Up In {taskCard.goal_title || goal.title}</Text>
+                    {taskCard.topics.slice(1).map((topic, i) => (
+                      <View key={topic.topic_id || i} style={styles.secondaryTopicCard}>
+                         <Text style={styles.secondaryTopicTitle}>{topic.title}</Text>
+                         <Text style={styles.secondaryTopicMins}>{topic.estimated_minutes} min</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+                    </>
+                  );
+                })()}
+              </>
+            ) : !query?.isLoading ? (
+              <View style={styles.infoCard}>
+                <Text style={styles.infoCardTitle}>No goal task ready for {goal.title}</Text>
+                <Text style={styles.infoCardBody}>
+                  The roadmap still exists, but this goal does not have a daily card ready right now.
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ))}
+
+        {activeGoals.length === 0 && (
           <View style={styles.infoCard}>
             <Text style={styles.infoCardTitle}>No active goal yet</Text>
             <Text style={styles.infoCardBody}>
@@ -400,27 +500,6 @@ export const TodayScreen = () => {
             <TouchableOpacity style={styles.primaryButton} onPress={() => navigation.navigate('Goals')}>
               <Text style={styles.primaryButtonText}>Open Goals</Text>
             </TouchableOpacity>
-          </View>
-        )}
-
-        {activeGoalId && isGoalError && (
-          <View style={styles.infoCard}>
-            <Text style={styles.infoCardTitle}>Couldn't load today&apos;s goal task</Text>
-            <Text style={styles.infoCardBody}>
-              Your personal tasks are still below. Pull to refresh or retry the goal task section.
-            </Text>
-            <TouchableOpacity style={styles.secondaryButton} onPress={() => refetchGoal()}>
-              <Text style={styles.secondaryButtonText}>Retry Goal Task</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {activeGoalId && !isGoalLoading && !isGoalError && !taskCard && (
-          <View style={styles.infoCard}>
-            <Text style={styles.infoCardTitle}>No goal task ready right now</Text>
-            <Text style={styles.infoCardBody}>
-              Your roadmap is still there. Check back later or open the roadmap to review any topic in full detail.
-            </Text>
           </View>
         )}
 
@@ -464,17 +543,21 @@ export const TodayScreen = () => {
       )}
 
       {/* Simplify Modal */}
-      <Modal visible={simplifyModalVisible} transparent animationType="slide">
+      <Modal visible={!!simplifyTarget} transparent animationType="slide">
          <View style={styles.modalOverlay}>
            <View style={styles.bottomSheet}>
              <Text style={styles.modalTitle}>Too much today?</Text>
              <Text style={styles.modalBody}>No problem. For now, Stride can skip today&apos;s top topic and move you forward without breaking the plan.</Text>
              
-             <TouchableOpacity style={styles.primaryButton} onPress={() => primaryTopic?.topic_id && simplifyMutation.mutate(primaryTopic.topic_id)} disabled={simplifyMutation.isPending || !primaryTopic?.topic_id}>
+             <TouchableOpacity
+               style={styles.primaryButton}
+               onPress={() => simplifyTarget && simplifyMutation.mutate(simplifyTarget)}
+               disabled={simplifyMutation.isPending || !simplifyTarget}
+             >
                 <Text style={styles.primaryButtonText}>{simplifyMutation.isPending ? 'Skipping...' : 'Skip Top Task'}</Text>
              </TouchableOpacity>
              
-             <TouchableOpacity style={styles.cancelButton} onPress={() => setSimplifyModalVisible(false)} disabled={simplifyMutation.isPending}>
+             <TouchableOpacity style={styles.cancelButton} onPress={() => setSimplifyTarget(null)} disabled={simplifyMutation.isPending}>
                 <Text style={styles.cancelButtonText}>Nevermind, I got this</Text>
              </TouchableOpacity>
            </View>
@@ -531,6 +614,9 @@ const styles = StyleSheet.create({
   progressContainer: {
     marginBottom: theme.spacing[32],
   },
+  goalSection: {
+    marginBottom: theme.spacing[24],
+  },
   progressTextRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -585,6 +671,13 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     color: 'rgba(255, 255, 255, 0.6)',
     marginBottom: theme.spacing[8],
+  },
+  goalLabel: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    color: 'rgba(255, 255, 255, 0.85)',
+    marginBottom: theme.spacing[8],
+    fontWeight: theme.typography.fontWeights.medium,
   },
   topicTitle: {
     fontFamily: theme.typography.fontDisplay,
