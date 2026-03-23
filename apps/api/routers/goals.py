@@ -299,6 +299,9 @@ def _normalise_onboarding_answers(session: dict, answers: dict) -> Dict[str, Any
                 mapped_key = q6_field_name
         normalised[mapped_key] = value
 
+    if q6_field_name and normalised.get(q6_field_name):
+        normalised["domainSpecificAnswer"] = normalised[q6_field_name]
+
     return normalised
 
 
@@ -464,10 +467,28 @@ async def _curate_resources_for_topic(
     topic_title: str,
     domain: str,
     budget: str,
+    *,
+    goal_title: str = "",
+    phase_title: str = "",
+    phase_topics: Optional[List[str]] = None,
+    previous_topic_title: str = "",
+    next_topic_title: str = "",
+    prior_knowledge: str = "",
+    domain_specific_answer: str = "",
 ) -> Dict[str, List[dict]]:
+    prompt_kwargs = {
+        "goal_title": goal_title,
+        "phase_title": phase_title,
+        "phase_topics": phase_topics or [],
+        "previous_topic_title": previous_topic_title,
+        "next_topic_title": next_topic_title,
+        "prior_knowledge": prior_knowledge,
+        "domain_specific_answer": domain_specific_answer,
+    }
+
     try:
         resources_raw = await call_gemini_json(
-            resource_curation_prompt(topic_title, domain, budget)
+            resource_curation_prompt(topic_title, domain, budget, **prompt_kwargs)
         )
         if not isinstance(resources_raw, list):
             resources_raw = []
@@ -489,7 +510,7 @@ async def _curate_resources_for_topic(
         if needs_more_concepts:
             try:
                 concept_raw = await call_gemini_json(
-                    concept_resource_curation_prompt(topic_title, domain, budget)
+                    concept_resource_curation_prompt(topic_title, domain, budget, **prompt_kwargs)
                 )
                 if isinstance(concept_raw, list):
                     concept_payload = await _verify_and_split_resources(
@@ -508,7 +529,7 @@ async def _curate_resources_for_topic(
         if needs_more_support:
             try:
                 support_raw = await call_gemini_json(
-                    supporting_resource_curation_prompt(topic_title, domain, budget)
+                    supporting_resource_curation_prompt(topic_title, domain, budget, **prompt_kwargs)
                 )
                 if isinstance(support_raw, list):
                     support_payload = await _verify_and_split_resources(
@@ -702,6 +723,34 @@ def _find_topic_and_phase(goal_doc: dict, topic_id: str) -> tuple[Optional[dict]
     return None, None
 
 
+def _build_topic_context(goal_doc: dict, topic_id: str) -> Dict[str, Any]:
+    for phase in goal_doc.get("phases", []):
+        topics = phase.get("topics", [])
+        for idx, topic in enumerate(topics):
+            if topic.get("topic_id") == topic_id:
+                previous_topic = topics[idx - 1] if idx > 0 else None
+                next_topic = topics[idx + 1] if idx + 1 < len(topics) else None
+                return {
+                    "goal_title": goal_doc.get("title", ""),
+                    "phase_title": phase.get("title", ""),
+                    "phase_topics": [item.get("title", "") for item in topics],
+                    "previous_topic_title": previous_topic.get("title", "") if previous_topic else "",
+                    "next_topic_title": next_topic.get("title", "") if next_topic else "",
+                    "prior_knowledge": goal_doc.get("intake", {}).get("prior_knowledge", ""),
+                    "domain_specific_answer": goal_doc.get("intake", {}).get("domain_specific_answer", ""),
+                }
+
+    return {
+        "goal_title": goal_doc.get("title", ""),
+        "phase_title": "",
+        "phase_topics": [],
+        "previous_topic_title": "",
+        "next_topic_title": "",
+        "prior_knowledge": goal_doc.get("intake", {}).get("prior_knowledge", ""),
+        "domain_specific_answer": goal_doc.get("intake", {}).get("domain_specific_answer", ""),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Request / response schemas
 # ---------------------------------------------------------------------------
@@ -801,9 +850,40 @@ async def _generate_roadmap_background(
                 all_topics.append(topic)
 
         async def _curate_and_verify(topic: dict) -> dict:
+            phase_context = {
+                "phase_title": "",
+                "phase_topics": [],
+                "previous_topic_title": "",
+                "next_topic_title": "",
+            }
+            for phase in roadmap_data.get("phases", []):
+                topics_in_phase = phase.get("topics", [])
+                for idx, candidate in enumerate(topics_in_phase):
+                    if candidate is topic:
+                        phase_context = {
+                            "phase_title": phase.get("title", ""),
+                            "phase_topics": [item.get("title", "") for item in topics_in_phase],
+                            "previous_topic_title": topics_in_phase[idx - 1].get("title", "") if idx > 0 else "",
+                            "next_topic_title": topics_in_phase[idx + 1].get("title", "") if idx + 1 < len(topics_in_phase) else "",
+                        }
+                        break
+                if phase_context["phase_topics"]:
+                    break
+
             try:
                 resources_raw = await call_gemini_json(
-                    resource_curation_prompt(topic["title"], domain, budget)
+                    resource_curation_prompt(
+                        topic["title"],
+                        domain,
+                        budget,
+                        goal_title=goal_text,
+                        phase_title=phase_context["phase_title"],
+                        phase_topics=phase_context["phase_topics"],
+                        previous_topic_title=phase_context["previous_topic_title"],
+                        next_topic_title=phase_context["next_topic_title"],
+                        prior_knowledge=profile["prior_knowledge"],
+                        domain_specific_answer=profile["domain_specific_answer"],
+                    )
                 )
                 if not isinstance(resources_raw, list):
                     resources_raw = []
@@ -1460,10 +1540,12 @@ async def complete_topic(
     # Prepare the next topic's links immediately so the user can inspect it
     # without waiting for the nightly resource hydration job.
     if next_topic_ref is not None and not next_topic_ref.get("resources"):
+        topic_context = _build_topic_context(goal_doc, next_topic_ref.get("topic_id", ""))
         generated_payload = await _curate_resources_for_topic(
             next_topic_ref.get("title", ""),
             goal_doc.get("domain", "other"),
             goal_doc.get("intake", {}).get("budget", "free"),
+            **topic_context,
         )
         if generated_payload["resources"] or generated_payload["practice_links"]:
             next_topic_ref["resources"] = generated_payload["resources"]
@@ -1552,10 +1634,12 @@ async def prepare_topic_resources(
             "goal_title": goal_doc.get("title", ""),
         }
 
+    topic_context = _build_topic_context(goal_doc, topic_id)
     generated_payload = await _curate_resources_for_topic(
         topic_doc.get("title", ""),
         goal_doc.get("domain", "other"),
         goal_doc.get("intake", {}).get("budget", "free"),
+        **topic_context,
     )
     topic_doc["resources"] = generated_payload["resources"]
     topic_doc["practice_links"] = generated_payload["practice_links"]

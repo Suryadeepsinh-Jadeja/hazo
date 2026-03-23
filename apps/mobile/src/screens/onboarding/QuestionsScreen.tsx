@@ -11,10 +11,10 @@ type QuestionConfig = { field_name: string; question_text: string };
 
 const DEFAULT_QUESTIONS: QuestionConfig[] = [
   { field_name: 'timeline', question_text: "What is your target timeline?" },
-  { field_name: 'priorKnowledge', question_text: "What is your prior knowledge or experience in this field?" },
+  { field_name: 'knowledgeLevel', question_text: "What is your prior knowledge or experience in this field?" },
   { field_name: 'dailyHours', question_text: "How many hours can you dedicate daily?" },
   { field_name: 'budget', question_text: "What is your budget for learning materials?" },
-  { field_name: 'externalMaterials', question_text: "Any specific external materials you want to use? (Optional)" }
+  { field_name: 'existingMaterials', question_text: "Any specific external materials you want to use? (Optional)" }
 ];
 
 export const QuestionsScreen = () => {
@@ -27,6 +27,7 @@ export const QuestionsScreen = () => {
   const [inputText, setInputText] = useState('');
   const [inputType, setInputType] = useState<'text' | 'numeric' | 'budget'>('text');
   const [q6FieldName, setQ6FieldName] = useState('domainSpecificAnswer');
+  const [answerMap, setAnswerMap] = useState<Record<string, string>>({});
   
   const flatListRef = useRef<FlatList>(null);
   const questionConfigs = useMemo<QuestionConfig[]>(() => {
@@ -77,13 +78,7 @@ export const QuestionsScreen = () => {
       } else {
         // Fetch custom AI Question 6 via POST
         try {
-          const answers: Record<string, string> = {};
-          const userMsgs = messages.filter(m => m.isUser);
-          userMsgs.forEach((m, idx) => {
-            const fieldName = questionConfigs[idx]?.field_name || `q${idx + 1}`;
-            answers[fieldName] = m.text;
-          });
-          const res = await api.post('/api/v1/goals/onboard/q6', { session_id: sessionId, answers });
+          const res = await api.post('/api/v1/goals/onboard/q6', { session_id: sessionId, answers: answerMap });
           qText = res.data.question || "Lastly, what do you feel is your biggest obstacle right now?";
           setQ6FieldName(res.data.field_name || 'domainSpecificAnswer');
         } catch {
@@ -103,8 +98,14 @@ export const QuestionsScreen = () => {
   const handleSend = (textOverride?: string) => {
     const textToSend = textOverride !== undefined ? textOverride : inputText;
     if (!textToSend.trim() && currentQIndex !== 4) return; // Q5 is optional
-    
-    setMessages(prev => [...prev, { id: `a-${currentQIndex}`, text: textToSend.trim() || 'Skipped', isUser: true }]);
+
+    const answer = textToSend.trim() || 'Skipped';
+    const fieldName = currentQIndex < questionConfigs.length
+      ? questionConfigs[currentQIndex]?.field_name || `q${currentQIndex + 1}`
+      : q6FieldName;
+
+    setMessages(prev => [...prev, { id: `a-${currentQIndex}`, text: answer, isUser: true }]);
+    setAnswerMap(prev => ({ ...prev, [fieldName]: answer }));
     setInputText('');
     
     setCurrentQIndex(prev => prev + 1);
@@ -112,16 +113,7 @@ export const QuestionsScreen = () => {
 
   const finalizeOnboarding = async () => {
     try {
-      // Build all_answers dict keyed by question field names
-      const userAnswers = messages.filter(m => m.isUser).map(m => m.text);
-      const allAnswers: Record<string, string> = {};
-      userAnswers.forEach((a, idx) => {
-        const fieldName = idx < questionConfigs.length
-          ? questionConfigs[idx]?.field_name || `q${idx + 1}`
-          : q6FieldName;
-        allAnswers[fieldName] = a;
-      });
-      await api.post('/api/v1/goals/onboard/complete', { session_id: sessionId, all_answers: allAnswers });
+      await api.post('/api/v1/goals/onboard/complete', { session_id: sessionId, all_answers: answerMap });
     } catch (e) {
       // Non-fatal: roadmap generation may still work
       console.warn('Error submitting onboarding answers:', e);
