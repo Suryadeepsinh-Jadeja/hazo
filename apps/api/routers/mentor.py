@@ -3,7 +3,7 @@ mentor.py — AI mentor chat and history endpoints for Stride.
 
 Endpoints:
   POST   /chat               streaming SSE chat with Gemini mentor
-  GET    /history/{goal_id}  last 20 mentor messages (Pro users only)
+  GET    /history/{goal_id}  last 20 mentor messages
 """
 
 import json
@@ -314,15 +314,7 @@ async def get_mentor_history(
     goal_id: str,
     current_user: UserDB = Depends(get_current_user),
 ):
-    """
-    Return the last 20 mentor messages for this goal.
-    Pro users only — returns 403 if the user is on the free plan.
-    """
-    if current_user.plan != "pro":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Mentor history is a Pro feature. Upgrade to access your full conversation history.",
-        )
+    """Return the last 20 mentor messages for this goal."""
 
     mentor_col = get_mentor_sessions_col()
     user_lookup_ids = _dedupe_non_empty([str(current_user.id), current_user.supabase_id])

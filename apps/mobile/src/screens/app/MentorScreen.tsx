@@ -6,6 +6,7 @@ import { ChevronLeft, ArrowUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import Config from 'react-native-config';
+import api from '../../lib/api';
 
 interface Message {
   id: string;
@@ -70,6 +71,8 @@ export const MentorScreen = () => {
   const [inputText, setInputText] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [rateLimited, setRateLimited] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [historyLoadError, setHistoryLoadError] = useState<string | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
 
@@ -82,10 +85,6 @@ export const MentorScreen = () => {
 
   const openMessageLink = async (url: string) => {
     const normalizedUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-    const supported = await Linking.canOpenURL(normalizedUrl);
-    if (!supported) {
-      throw new Error(`Unable to open link: ${normalizedUrl}`);
-    }
     await Linking.openURL(normalizedUrl);
   };
 
@@ -191,6 +190,54 @@ export const MentorScreen = () => {
 
     return { nextContent, isDone };
   };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadHistory = async () => {
+      if (!goalId || !token) {
+        if (isMounted) {
+          setIsLoadingHistory(false);
+        }
+        return;
+      }
+
+      try {
+        setIsLoadingHistory(true);
+        setHistoryLoadError(null);
+        const response = await api.get(`/api/v1/mentor/history/${goalId}`);
+        const historyMessages = Array.isArray(response.data) ? response.data : [];
+        const mappedMessages: Message[] = historyMessages
+          .filter((item) => typeof item?.content === 'string' && item.content.trim().length > 0)
+          .map((item, index) => ({
+            id: `${item.created_at || 'history'}-${index}`,
+            role: (item.role === 'user' ? 'user' : 'assistant') as Message['role'],
+            content: item.content,
+          }))
+          .reverse();
+
+        if (isMounted) {
+          setMessages(mappedMessages);
+        }
+      } catch (error) {
+        if (isMounted) {
+          const message = formatMentorError(error);
+          setHistoryLoadError(message);
+          console.warn('Failed to load mentor history:', message);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingHistory(false);
+        }
+      }
+    };
+
+    loadHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [goalId, token]);
 
   const handleSend = async (overrideText?: string) => {
     const textToSend = overrideText || inputText;
@@ -378,10 +425,16 @@ export const MentorScreen = () => {
       )}
 
       {/* Core Chat Scroll/List */}
-      {messages.length === 0 ? (
+      {isLoadingHistory ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.strideRoleEmpty}>STRIDE</Text>
+          <Text style={styles.welcomeAiText}>Loading your previous mentor chat...</Text>
+        </View>
+      ) : messages.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.strideRoleEmpty}>STRIDE</Text>
           <Text style={styles.welcomeAiText}>Hello {session?.user?.user_metadata?.name || 'there'}. I'm your AI Mentor. Let me know what you'd like to work on today, or ask me a question.</Text>
+          {historyLoadError && <Text style={styles.historyErrorText}>{historyLoadError}</Text>}
           
           <View style={styles.chipsContainer}>
              {QUICK_ACTIONS.map((action, i) => (
@@ -506,6 +559,13 @@ const styles = StyleSheet.create({
     color: theme.colors.primary.inkLight,
     marginBottom: theme.spacing[48],
   },
+  historyErrorText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    color: theme.colors.warning.amberDark,
+    marginTop: -theme.spacing[24],
+    marginBottom: theme.spacing[24],
+  },
   chipsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -578,7 +638,8 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   textBold: {
-    fontWeight: theme.typography.fontWeights.semibold,
+    fontWeight: theme.typography.fontWeights.bold,
+    color: theme.colors.primary.ink,
   },
   textLink: {
     color: theme.colors.accent.coral,
