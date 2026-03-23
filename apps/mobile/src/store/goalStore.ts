@@ -1,8 +1,10 @@
 import { create } from 'zustand';
+import { buildGoalVisualThemeMap, GoalVisualTheme } from '../lib/goalVisuals';
 
 // Goal interface placeholder 
 export interface Goal {
-  id: string;
+  id?: string;
+  _id?: string;
   title: string;
   [key: string]: any;
 }
@@ -10,6 +12,7 @@ export interface Goal {
 interface GoalState {
   activeGoalId: string | null;
   goals: Goal[];
+  goalThemes: Record<string, GoalVisualTheme>;
   setActiveGoalId: (id: string | null) => void;
   setGoals: (goals: Goal[]) => void;
 }
@@ -17,6 +20,11 @@ interface GoalState {
 export const useGoalStore = create<GoalState>((set) => ({
   activeGoalId: null,
   goals: [],
+  goalThemes: {},
   setActiveGoalId: (id) => set({ activeGoalId: id }),
-  setGoals: (goals) => set({ goals }),
+  setGoals: (goals) =>
+    set({
+      goals,
+      goalThemes: buildGoalVisualThemeMap(goals),
+    }),
 }));

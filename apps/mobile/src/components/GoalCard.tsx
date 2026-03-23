@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Flame, Trash2 } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { getGoalVisualTheme } from '../lib/goalVisuals';
+import { useGoalStore } from '../store/goalStore';
 
 export interface GoalCardProps {
   goal: {
@@ -19,11 +20,13 @@ export interface GoalCardProps {
 }
 
 export const GoalCard = ({ goal, onPress, onDelete, deleting = false }: GoalCardProps) => {
+  const goalThemes = useGoalStore((state) => state.goalThemes);
   const currentDay = Math.min((goal.current_day_index || 0) + 1, goal.total_days || 1);
   const targetDate = goal.timeline_target
     ? new Date(goal.timeline_target).toLocaleDateString()
     : null;
-  const visualTheme = getGoalVisualTheme(goal._id || goal.title);
+  const visualTheme =
+    (goal._id ? goalThemes[goal._id] : undefined) || getGoalVisualTheme(goal._id || goal.title);
 
   return (
     <TouchableOpacity

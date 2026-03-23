@@ -9,12 +9,14 @@ import {
   View,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, Clock, Sparkles } from 'lucide-react-native';
 
 import api from '../../lib/api';
 import { ResourceCard } from '../../components/ResourceCard';
 import { theme } from '../../constants/theme';
 import { getGoalVisualTheme } from '../../lib/goalVisuals';
+import { useGoalStore } from '../../store/goalStore';
 
 interface TopicResource {
   resource_id?: string;
@@ -40,15 +42,36 @@ interface TopicDetail {
 
 export const TopicDetailScreen = () => {
   const navigation = useNavigation<any>();
+  const queryClient = useQueryClient();
   const route = useRoute<any>();
   const { goalId, topicId } = route.params || {};
+  const goalThemes = useGoalStore((state) => state.goalThemes);
 
   const [goalTitle, setGoalTitle] = useState('');
   const [phaseTitle, setPhaseTitle] = useState('');
   const [topic, setTopic] = useState<TopicDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [preparing, setPreparing] = useState(false);
-  const visualTheme = getGoalVisualTheme(goalId || goalTitle);
+  const visualTheme = (goalId ? goalThemes[goalId] : undefined) || getGoalVisualTheme(goalId || goalTitle);
+
+  const completeTopicMutation = useMutation({
+    mutationFn: async () => {
+      if (!goalId || !topicId) {
+        throw new Error('Missing goal or topic');
+      }
+
+      await api.post(`/api/v1/goals/${goalId}/topics/${topicId}/complete`);
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['todayTask'] }),
+        queryClient.invalidateQueries({ queryKey: ['goals'] }),
+        queryClient.invalidateQueries({ queryKey: ['userProfile'] }),
+        queryClient.invalidateQueries({ queryKey: ['userStats'] }),
+      ]);
+      await loadTopic();
+    },
+  });
 
   const loadTopic = async () => {
     if (!goalId || !topicId) {
@@ -183,6 +206,33 @@ export const TopicDetailScreen = () => {
               </Text>
             </View>
           </View>
+
+          <TouchableOpacity
+            style={[
+              styles.completeButton,
+              {
+                backgroundColor: topic.status === 'done' ? visualTheme.surfaceAlt : visualTheme.accent,
+              },
+              completeTopicMutation.isPending && styles.completeButtonPending,
+            ]}
+            onPress={() => completeTopicMutation.mutate()}
+            disabled={completeTopicMutation.isPending || topic.status === 'done' || topic.status === 'skipped'}
+          >
+            <Text
+              style={[
+                styles.completeButtonText,
+                {
+                  color: topic.status === 'done' ? visualTheme.accent : theme.colors.neutral.white,
+                },
+              ]}
+            >
+              {topic.status === 'done'
+                ? 'Day Complete'
+                : completeTopicMutation.isPending
+                  ? 'Marking complete...'
+                  : 'Mark All Done'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {!!topic.ai_note && (
@@ -375,6 +425,22 @@ const styles = StyleSheet.create({
   },
   statusTextActive: {
     color: theme.colors.accent.coralDark,
+  },
+  completeButton: {
+    marginTop: theme.spacing[16],
+    minHeight: 52,
+    borderRadius: theme.borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: theme.spacing[16],
+  },
+  completeButtonPending: {
+    opacity: 0.75,
+  },
+  completeButtonText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.md,
+    fontWeight: theme.typography.fontWeights.semibold,
   },
   section: {
     marginBottom: theme.spacing[24],

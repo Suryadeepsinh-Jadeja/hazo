@@ -13,6 +13,13 @@ export interface GoalVisualTheme {
   pattern: 'orb' | 'beam' | 'rings' | 'arc' | 'spark' | 'leaf';
 }
 
+export interface GoalThemeCandidate {
+  _id?: string;
+  id?: string;
+  title?: string | null;
+  status?: string | null;
+}
+
 const THEMES: GoalVisualTheme[] = [
   {
     id: 'ember',
@@ -108,10 +115,102 @@ const hashString = (value: string) => {
   return hash;
 };
 
+const normalizeHex = (value: string) => value.replace('#', '');
+
+const mixHex = (start: string, end: string, amount: number) => {
+  const safeAmount = Math.max(0, Math.min(1, amount));
+  const startHex = normalizeHex(start);
+  const endHex = normalizeHex(end);
+
+  const startR = parseInt(startHex.slice(0, 2), 16);
+  const startG = parseInt(startHex.slice(2, 4), 16);
+  const startB = parseInt(startHex.slice(4, 6), 16);
+
+  const endR = parseInt(endHex.slice(0, 2), 16);
+  const endG = parseInt(endHex.slice(2, 4), 16);
+  const endB = parseInt(endHex.slice(4, 6), 16);
+
+  const mixed = (from: number, to: number) =>
+    Math.round(from + (to - from) * safeAmount)
+      .toString(16)
+      .padStart(2, '0');
+
+  return `#${mixed(startR, endR)}${mixed(startG, endG)}${mixed(startB, endB)}`;
+};
+
+const getGoalKey = (goal?: GoalThemeCandidate | null) =>
+  goal?._id || goal?.id || goal?.title || null;
+
+const createThemeVariant = (
+  baseTheme: GoalVisualTheme,
+  variantIndex: number
+): GoalVisualTheme => {
+  const mixTarget = variantIndex % 2 === 1 ? '#FFFFFF' : '#000000';
+  const depthStep = Math.floor((variantIndex - 1) / 2);
+  const mixAmount = 0.1 + depthStep * 0.06;
+
+  return {
+    ...baseTheme,
+    id: `${baseTheme.id}-${variantIndex}`,
+    gradient: [
+      mixHex(baseTheme.gradient[0], mixTarget, Math.min(0.28, mixAmount)),
+      mixHex(baseTheme.gradient[1], mixTarget, Math.min(0.22, mixAmount * 0.9)),
+    ],
+    accent: mixHex(baseTheme.accent, mixTarget, Math.min(0.22, mixAmount)),
+    accentSoft: mixHex(baseTheme.accentSoft, mixTarget, Math.min(0.26, mixAmount * 1.1)),
+    accentMuted: mixHex(baseTheme.accentMuted, mixTarget, Math.min(0.18, mixAmount * 0.8)),
+    surface: mixHex(baseTheme.surface, mixTarget, Math.min(0.12, mixAmount * 0.5)),
+    surfaceAlt: mixHex(baseTheme.surfaceAlt, mixTarget, Math.min(0.16, mixAmount * 0.65)),
+    border: mixHex(baseTheme.border, mixTarget, Math.min(0.2, mixAmount * 0.8)),
+    pillBg: mixHex(baseTheme.pillBg, mixTarget, Math.min(0.18, mixAmount * 0.7)),
+    pillText: mixHex(baseTheme.pillText, mixTarget, Math.min(0.14, mixAmount * 0.55)),
+  };
+};
+
+const getThemeForIndex = (index: number): GoalVisualTheme => {
+  if (index < THEMES.length) {
+    return THEMES[index];
+  }
+
+  const baseTheme = THEMES[index % THEMES.length];
+  const variantIndex = Math.floor(index / THEMES.length);
+  return createThemeVariant(baseTheme, variantIndex);
+};
+
 export const getGoalVisualTheme = (goalKey?: string | null): GoalVisualTheme => {
   if (!goalKey) {
     return THEMES[0];
   }
 
   return THEMES[hashString(goalKey) % THEMES.length];
+};
+
+export const buildGoalVisualThemeMap = (
+  goals: GoalThemeCandidate[] = []
+): Record<string, GoalVisualTheme> => {
+  const themeMap: Record<string, GoalVisualTheme> = {};
+
+  const activeGoals = goals
+    .filter((goal) => goal?.status === 'active')
+    .filter((goal): goal is GoalThemeCandidate => Boolean(getGoalKey(goal)))
+    .sort((left, right) => hashString(getGoalKey(left)!) - hashString(getGoalKey(right)!));
+
+  activeGoals.forEach((goal, index) => {
+    const key = getGoalKey(goal);
+    if (!key) {
+      return;
+    }
+    themeMap[key] = getThemeForIndex(index);
+  });
+
+  goals.forEach((goal) => {
+    const key = getGoalKey(goal);
+    if (!key || themeMap[key]) {
+      return;
+    }
+
+    themeMap[key] = getGoalVisualTheme(key);
+  });
+
+  return themeMap;
 };

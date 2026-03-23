@@ -13,7 +13,7 @@ export const RoadmapScreen = () => {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { goalId } = route.params || {};
-  const { setActiveGoalId } = useGoalStore();
+  const { goalThemes, setActiveGoalId } = useGoalStore();
 
   const [roadmap, setRoadmap] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -55,7 +55,7 @@ export const RoadmapScreen = () => {
 
   const onPressInFab = () => { fabScale.value = withTiming(0.95, { duration: 100 }); };
   const onPressOutFab = () => { fabScale.value = withTiming(1, { duration: 100 }); };
-  const visualTheme = getGoalVisualTheme(goalId || roadmap?.title);
+  const visualTheme = (goalId ? goalThemes[goalId] : undefined) || getGoalVisualTheme(goalId || roadmap?.title);
   const currentTopicTitle =
     roadmap?.phases
       ?.flatMap((phase: any) => phase.topics || [])

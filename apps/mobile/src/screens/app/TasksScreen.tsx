@@ -1,186 +1,381 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, RefreshControl } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import React, { useMemo, useState } from 'react';
+import {
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Check, Trash2 } from 'lucide-react-native';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Circle,
+  Plus,
+  Trash2,
+} from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
+import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
+
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 import { AddTaskModal } from '../../components/AddTaskModal';
-import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 
-const FILTERS = ['All', 'Today', 'Overdue', 'Done'];
+type TaskStatus = 'pending' | 'done' | 'abandoned' | 'overdue';
+type TaskPriority = 'low' | 'medium' | 'high';
+
+interface TaskItem {
+  _id: string;
+  raw_input: string;
+  due_date?: string | null;
+  priority?: TaskPriority;
+  status: TaskStatus;
+}
+
+interface TaskSection {
+  key: string;
+  title: string;
+  tint: string;
+  tasks: TaskItem[];
+}
+
+const startOfToday = () => {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const endOfToday = () => {
+  const date = new Date();
+  date.setHours(23, 59, 59, 999);
+  return date;
+};
+
+const endOfTomorrow = () => {
+  const date = endOfToday();
+  date.setDate(date.getDate() + 1);
+  return date;
+};
+
+const formatSectionDate = (date: Date) =>
+  date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+
+const formatDueText = (task: TaskItem) => {
+  if (!task.due_date) {
+    return 'No due date';
+  }
+
+  const dueDate = new Date(task.due_date);
+  const todayStart = startOfToday();
+  const todayEnd = endOfToday();
+  const tomorrowEnd = endOfTomorrow();
+
+  if (dueDate < todayStart) {
+    return 'Yesterday';
+  }
+
+  if (dueDate >= todayStart && dueDate <= todayEnd) {
+    return 'Today';
+  }
+
+  if (dueDate > todayEnd && dueDate <= tomorrowEnd) {
+    return 'Tomorrow';
+  }
+
+  return formatSectionDate(dueDate);
+};
+
+const getSectionTint = (key: string) => {
+  switch (key) {
+    case 'past':
+      return theme.colors.accent.coral;
+    case 'today':
+      return theme.colors.active.indigo;
+    case 'tomorrow':
+      return theme.colors.warning.amber;
+    case 'upcoming':
+      return theme.colors.primary.ink;
+    case 'no-date':
+      return theme.colors.primary.inkMuted;
+    default:
+      return theme.colors.primary.ink;
+  }
+};
+
+const getPriorityTone = (priority?: TaskPriority) => {
+  switch (priority) {
+    case 'high':
+      return theme.colors.danger.rose;
+    case 'medium':
+      return theme.colors.warning.amber;
+    case 'low':
+    default:
+      return theme.colors.positive.sage;
+  }
+};
+
+const buildSections = (tasks: TaskItem[]): { activeSections: TaskSection[]; completedTasks: TaskItem[] } => {
+  const todayStart = startOfToday();
+  const todayEnd = endOfToday();
+  const tomorrowEnd = endOfTomorrow();
+
+  const groups: Record<string, TaskItem[]> = {
+    past: [],
+    today: [],
+    tomorrow: [],
+    upcoming: [],
+    'no-date': [],
+  };
+
+  const completedTasks: TaskItem[] = [];
+
+  tasks.forEach((task) => {
+    if (task.status === 'done') {
+      completedTasks.push(task);
+      return;
+    }
+
+    if (!task.due_date) {
+      groups['no-date'].push(task);
+      return;
+    }
+
+    const dueDate = new Date(task.due_date);
+    if (dueDate < todayStart) {
+      groups.past.push(task);
+      return;
+    }
+
+    if (dueDate >= todayStart && dueDate <= todayEnd) {
+      groups.today.push(task);
+      return;
+    }
+
+    if (dueDate > todayEnd && dueDate <= tomorrowEnd) {
+      groups.tomorrow.push(task);
+      return;
+    }
+
+    groups.upcoming.push(task);
+  });
+
+  const sectionConfig = [
+    { key: 'past', title: 'Past' },
+    { key: 'today', title: 'Today' },
+    { key: 'tomorrow', title: 'Tomorrow' },
+    { key: 'upcoming', title: 'Upcoming' },
+    { key: 'no-date', title: 'No date' },
+  ];
+
+  const activeSections = sectionConfig
+    .map((section) => ({
+      key: section.key,
+      title: section.title,
+      tint: getSectionTint(section.key),
+      tasks: groups[section.key].sort((left, right) => {
+        const leftTime = left.due_date ? new Date(left.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+        const rightTime = right.due_date ? new Date(right.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+        return leftTime - rightTime;
+      }),
+    }))
+    .filter((section) => section.tasks.length > 0);
+
+  completedTasks.sort((left, right) => {
+    const leftTime = left.due_date ? new Date(left.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+    const rightTime = right.due_date ? new Date(right.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+    return rightTime - leftTime;
+  });
+
+  return { activeSections, completedTasks };
+};
 
 export const TasksScreen = () => {
   const navigation = useNavigation<any>();
   const queryClient = useQueryClient();
-  const [activeFilter, setActiveFilter] = useState('All');
-  const [modalVisible, setModalVisible] = useState(false);
 
-  const { data: tasks, isLoading, refetch } = useQuery({
+  const [modalVisible, setModalVisible] = useState(false);
+  const [completedExpanded, setCompletedExpanded] = useState(false);
+
+  const {
+    data: tasks = [],
+    isLoading,
+    isRefetching,
+    refetch,
+  } = useQuery<TaskItem[]>({
     queryKey: ['tasks'],
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
     queryFn: async () => {
-      const res = await api.get('/api/v1/tasks');
-      return res.data;
-    }
+      const response = await api.get('/api/v1/tasks');
+      return response.data;
+    },
   });
 
   const completeMutation = useMutation({
-    mutationFn: async (task: any) => api.post(`/api/v1/tasks/${task._id}/complete`),
+    mutationFn: async (task: TaskItem) => api.post(`/api/v1/tasks/${task._id}/complete`),
     onSuccess: () => {
-      ReactNativeHapticFeedback.trigger('impactHeavy');
-    
-    setTimeout(() => {queryClient.invalidateQueries({ queryKey: ['tasks'] });
-    }, 100); // Added a small delay for haptic feedback to register before UI update
-    }
+      ReactNativeHapticFeedback.trigger('impactMedium');
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => api.delete(`/api/v1/tasks/${id}`),
+    mutationFn: async (taskId: string) => api.delete(`/api/v1/tasks/${taskId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
-    }
+    },
   });
 
-  const handleSwipeComplete = (task: any) => completeMutation.mutate(task);
-  
-  const handleSwipeDelete = (id: string) => {
-    Alert.alert("Delete Task", "Are you sure you want to remove this task?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => deleteMutation.mutate(id) }
+  const { activeSections, completedTasks } = useMemo(() => buildSections(tasks), [tasks]);
+
+  const handleComplete = (task: TaskItem) => {
+    if (task.status === 'done' || completeMutation.isPending) {
+      return;
+    }
+
+    completeMutation.mutate(task);
+  };
+
+  const handleDelete = (taskId: string) => {
+    Alert.alert('Delete Task', 'Remove this task from your list?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => deleteMutation.mutate(taskId),
+      },
     ]);
   };
 
-  const getPriorityColor = (priority: string) => {
-    if (priority === 'high') return theme.colors.danger.rose;
-    if (priority === 'medium') return theme.colors.warning.amber;
-    return theme.colors.positive.sage;
-  };
-
-  const renderRightActions = (id: string) => (
+  const renderRightActions = (taskId: string) => (
     <View style={styles.swipeRight}>
-      <Trash2 color={theme.colors.neutral.white} size={24} />
+      <Trash2 color={theme.colors.neutral.white} size={20} />
       <Text style={styles.swipeText}>Delete</Text>
     </View>
   );
 
-  const renderLeftActions = (id: string) => (
-    <View style={styles.swipeLeft}>
-      <Check color={theme.colors.neutral.white} size={24} />
-      <Text style={styles.swipeText}>Done</Text>
-    </View>
-  );
-
-  const renderTask = ({ item }: { item: any }) => {
-    const isDone = item.status === 'done';
+  const renderTaskRow = (task: TaskItem, done = false) => {
+    const isCompleting = completeMutation.isPending && completeMutation.variables?._id === task._id;
+    const priorityColor = getPriorityTone(task.priority);
 
     return (
       <Swipeable
-        renderRightActions={() => renderRightActions(item._id)}
-        renderLeftActions={() => renderLeftActions(item._id)}
+        key={task._id}
+        renderRightActions={() => renderRightActions(task._id)}
         onSwipeableOpen={(direction) => {
-          if (direction === 'left') handleSwipeComplete(item);
-          if (direction === 'right') handleSwipeDelete(item._id);
+          if (direction === 'right') {
+            handleDelete(task._id);
+          }
         }}
       >
-        <TouchableOpacity 
-          style={[styles.taskCard, isDone && { opacity: 0.6 }]} 
-          onPress={() => navigation.navigate('TaskDetailScreen', { taskId: item._id, task: item })}
-          activeOpacity={0.8}
+        <TouchableOpacity
+          style={styles.taskRow}
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('TaskDetailScreen', { taskId: task._id, task })}
         >
-          <View style={styles.taskCardRow}>
-            <View style={[styles.priorityDot, { backgroundColor: getPriorityColor(item.priority) }]} />
-            <Text style={[styles.taskTitle, isDone && styles.textStrikethrough]} numberOfLines={1}>
-              {item.raw_input}
+          <TouchableOpacity
+            style={[styles.checkboxButton, done && styles.checkboxButtonDone]}
+            activeOpacity={0.85}
+            onPress={() => handleComplete(task)}
+            disabled={done || isCompleting}
+          >
+            {done || isCompleting ? (
+              <CheckCircle2 color={done ? theme.colors.positive.sageDark : theme.colors.accent.coral} size={20} />
+            ) : (
+              <Circle color={priorityColor} size={18} />
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.taskTextWrap}>
+            <Text style={[styles.taskTitle, done && styles.taskTitleDone]} numberOfLines={2}>
+              {task.raw_input}
             </Text>
+            <View style={styles.taskMetaRow}>
+              <Text style={[styles.taskMeta, done && styles.taskMetaDone]}>{formatDueText(task)}</Text>
+              <View style={[styles.priorityPill, { backgroundColor: `${priorityColor}18` }]}>
+                <View style={[styles.priorityPillDot, { backgroundColor: priorityColor }]} />
+                <Text style={[styles.priorityPillText, { color: priorityColor }]}>
+                  {(task.priority || 'low').toUpperCase()}
+                </Text>
+              </View>
+            </View>
           </View>
-          <Text style={styles.taskDueDate}>{item.due_date ? String(item.due_date) : 'No due date'}</Text>
         </TouchableOpacity>
       </Swipeable>
     );
   };
 
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyText}>No tasks here.</Text>
-      <Text style={styles.emptySubtext}>Add something below to get started.</Text>
-      <TouchableOpacity style={styles.emptyButton} onPress={() => setModalVisible(true)}>
-        <Text style={styles.emptyButtonText}>+ Add a Task</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const filteredTasks = (tasks || []).filter((task: any) => {
-    if (activeFilter === 'Done') {
-      return task.status === 'done';
-    }
-
-    if (activeFilter === 'Overdue') {
-      return task.status === 'overdue';
-    }
-
-    if (activeFilter === 'Today') {
-      if (!task.due_date) {
-        return task.status !== 'done';
-      }
-
-      const dueDate = new Date(task.due_date);
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      const todayEnd = new Date();
-      todayEnd.setHours(23, 59, 59, 999);
-
-      return task.status !== 'done' && dueDate >= todayStart && dueDate <= todayEnd;
-    }
-
-    return true;
-  });
-
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>My Tasks</Text>
-        <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
-          <Plus color={theme.colors.neutral.white} size={24} />
-        </TouchableOpacity>
-      </View>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={isLoading || isRefetching} onRefresh={refetch} tintColor={theme.colors.accent.coral} />
+        }
+      >
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.headerTitle}>Tasks</Text>
+            <Text style={styles.headerSubtitle}>Simple lists, grouped by when they need your attention.</Text>
+          </View>
+        </View>
 
-      {/* Filters */}
-      <View style={styles.filterContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
-          {FILTERS.map(f => (
-            <TouchableOpacity 
-              key={f} 
-              style={[styles.filterChip, activeFilter === f && styles.filterChipActive]}
-              onPress={() => setActiveFilter(f)}
-            >
-              <Text style={[styles.filterChipText, activeFilter === f && styles.filterChipTextActive]}>{f}</Text>
+        {activeSections.length === 0 && completedTasks.length === 0 && !isLoading ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>Nothing on your plate.</Text>
+            <Text style={styles.emptyBody}>Add a task and it will appear in the right date section automatically.</Text>
+            <TouchableOpacity style={styles.emptyButton} onPress={() => setModalVisible(true)}>
+              <Text style={styles.emptyButtonText}>Add a task</Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+          </View>
+        ) : null}
 
-      {/* List */}
-      <View style={{ flex: 1 }}>
-        <FlashList
-          data={filteredTasks}
-          renderItem={renderTask}
-          keyExtractor={(it: any) => it._id}
-          estimatedItemSize={76}
-          contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
-          ListEmptyComponent={isLoading ? null : renderEmpty}
-        />
-      </View>
+        {activeSections.map((section) => (
+          <View key={section.key} style={styles.sectionCard}>
+            <Text style={[styles.sectionTitle, { color: section.tint }]}>{section.title}</Text>
+            <View style={styles.sectionTasks}>
+              {section.tasks.map((task) => renderTaskRow(task))}
+            </View>
+          </View>
+        ))}
 
-      <AddTaskModal 
-        visible={modalVisible} 
-        onClose={() => setModalVisible(false)} 
-        onSuccess={refetch} 
-      />
+        {completedTasks.length > 0 && (
+          <View style={styles.completedCard}>
+            <TouchableOpacity
+              style={styles.completedHeader}
+              activeOpacity={0.85}
+              onPress={() => setCompletedExpanded((current) => !current)}
+            >
+              <Text style={styles.completedTitle}>Completed ({completedTasks.length})</Text>
+              {completedExpanded ? (
+                <ChevronUp color={theme.colors.primary.inkMuted} size={22} />
+              ) : (
+                <ChevronDown color={theme.colors.primary.inkMuted} size={22} />
+              )}
+            </TouchableOpacity>
+
+            {completedExpanded ? (
+              <View style={styles.sectionTasks}>
+                {completedTasks.map((task) => renderTaskRow(task, true))}
+              </View>
+            ) : null}
+          </View>
+        )}
+      </ScrollView>
+
+      <TouchableOpacity style={styles.fab} activeOpacity={0.9} onPress={() => setModalVisible(true)}>
+        <Plus color={theme.colors.neutral.white} size={28} />
+      </TouchableOpacity>
+
+      <AddTaskModal visible={modalVisible} onClose={() => setModalVisible(false)} onSuccess={refetch} />
     </View>
   );
 };
@@ -190,148 +385,199 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.neutral.cream,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: theme.spacing[24],
+  scrollContent: {
+    paddingHorizontal: theme.spacing[20],
     paddingTop: theme.spacing[64],
-    paddingBottom: theme.spacing[16],
-    backgroundColor: theme.colors.neutral.cream,
+    paddingBottom: theme.spacing[120],
+  },
+  header: {
+    marginBottom: theme.spacing[16],
   },
   headerTitle: {
     fontFamily: theme.typography.fontDisplay,
-    fontSize: theme.typography.fontSizes.xxl,
+    fontSize: 28,
     color: theme.colors.primary.ink,
+    lineHeight: 34,
   },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: theme.colors.accent.coral,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  filterContainer: {
-    marginBottom: theme.spacing[4],
-  },
-  filterScroll: {
-    paddingHorizontal: theme.spacing[24],
-    paddingBottom: theme.spacing[16],
-    gap: theme.spacing[8],
-  },
-  filterChip: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: theme.borderRadius.full,
-    borderWidth: 1,
-    borderColor: theme.colors.neutral.border,
-    backgroundColor: theme.colors.neutral.white,
-  },
-  filterChipActive: {
-    backgroundColor: theme.colors.primary.ink,
-    borderColor: theme.colors.primary.ink,
-  },
-  filterChipText: {
-    fontFamily: theme.typography.fontBody,
-    fontSize: theme.typography.fontSizes.sm,
-    color: theme.colors.primary.ink,
-  },
-  filterChipTextActive: {
-    color: theme.colors.neutral.white,
-    fontWeight: theme.typography.fontWeights.medium,
-  },
-  listContent: {
-    paddingHorizontal: theme.spacing[24],
-    paddingBottom: theme.spacing[48],
-  },
-  taskCard: {
-    backgroundColor: theme.colors.neutral.white,
-    padding: theme.spacing[16],
-    borderRadius: theme.borderRadius.md,
-    marginBottom: theme.spacing[12],
-    borderWidth: 1,
-    borderColor: theme.colors.neutral.border,
-  },
-  taskCardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  priorityDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: theme.spacing[12],
-  },
-  taskTitle: {
-    flex: 1,
-    fontFamily: theme.typography.fontBody,
-    fontSize: theme.typography.fontSizes.md,
-    color: theme.colors.primary.ink,
-    fontWeight: theme.typography.fontWeights.medium,
-  },
-  textStrikethrough: {
-    textDecorationLine: 'line-through',
-    color: theme.colors.primary.inkMuted,
-  },
-  taskDueDate: {
-    fontFamily: theme.typography.fontMono,
-    fontSize: theme.typography.fontSizes.xs,
-    color: theme.colors.primary.inkMuted,
-    marginTop: theme.spacing[8],
-    marginLeft: 20, // aligns with title (8 + 12 gap)
-  },
-  swipeRight: {
-    backgroundColor: theme.colors.danger.rose,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    width: '100%',
-    borderRadius: theme.borderRadius.md,
-    marginBottom: theme.spacing[12],
-    paddingRight: theme.spacing[24],
-  },
-  swipeLeft: {
-    backgroundColor: theme.colors.positive.sage,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-    width: '100%',
-    borderRadius: theme.borderRadius.md,
-    marginBottom: theme.spacing[12],
-    paddingLeft: theme.spacing[24],
-  },
-  swipeText: {
-    fontFamily: theme.typography.fontBody,
-    color: theme.colors.neutral.white,
-    fontSize: theme.typography.fontSizes.sm,
-    fontWeight: theme.typography.fontWeights.semibold,
-    marginTop: 4,
-  },
-  emptyContainer: {
-    paddingTop: theme.spacing[64],
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontFamily: theme.typography.fontDisplay,
-    fontSize: theme.typography.fontSizes.xl,
-    color: theme.colors.primary.ink,
-    marginBottom: theme.spacing[8],
-  },
-  emptySubtext: {
+  headerSubtitle: {
+    marginTop: theme.spacing[4],
+    maxWidth: 300,
     fontFamily: theme.typography.fontBody,
     fontSize: theme.typography.fontSizes.base,
     color: theme.colors.primary.inkMuted,
-    marginBottom: theme.spacing[32],
+    lineHeight: 22,
+  },
+  sectionCard: {
+    backgroundColor: theme.colors.neutral.white,
+    borderRadius: theme.borderRadius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.neutral.border,
+    paddingHorizontal: theme.spacing[16],
+    paddingTop: theme.spacing[16],
+    paddingBottom: theme.spacing[4],
+    marginBottom: theme.spacing[12],
+  },
+  sectionTitle: {
+    fontFamily: theme.typography.fontDisplay,
+    fontSize: 16,
+    marginBottom: theme.spacing[6],
+  },
+  sectionTasks: {
+    gap: 0,
+  },
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: theme.spacing[10],
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.neutral.border,
+  },
+  checkboxButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: theme.spacing[10],
+    backgroundColor: theme.colors.neutral.white,
+    marginTop: 1,
+  },
+  checkboxButtonDone: {
+    backgroundColor: theme.colors.positive.sageLight,
+  },
+  taskTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  taskTitle: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: 15,
+    lineHeight: 20,
+    color: theme.colors.primary.ink,
+    fontWeight: theme.typography.fontWeights.medium,
+  },
+  taskTitleDone: {
+    color: theme.colors.primary.inkMuted,
+    textDecorationLine: 'line-through',
+  },
+  taskMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: theme.spacing[6],
+    marginTop: theme.spacing[6],
+  },
+  taskMeta: {
+    fontFamily: theme.typography.fontMono,
+    fontSize: theme.typography.fontSizes.xs,
+    color: theme.colors.primary.inkMuted,
+  },
+  taskMetaDone: {
+    color: theme.colors.neutral.borderMid,
+  },
+  priorityPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: theme.spacing[8],
+    paddingVertical: theme.spacing[2],
+  },
+  priorityPillDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: theme.spacing[6],
+  },
+  priorityPillText: {
+    fontFamily: theme.typography.fontMono,
+    fontSize: 11,
+    fontWeight: theme.typography.fontWeights.bold,
+    letterSpacing: 0.5,
+  },
+  completedCard: {
+    backgroundColor: theme.colors.neutral.white,
+    borderRadius: theme.borderRadius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.neutral.border,
+    paddingHorizontal: theme.spacing[16],
+    paddingTop: theme.spacing[16],
+    paddingBottom: theme.spacing[8],
+    marginBottom: theme.spacing[12],
+  },
+  completedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: theme.spacing[12],
+  },
+  completedTitle: {
+    fontFamily: theme.typography.fontDisplay,
+    fontSize: 18,
+    color: theme.colors.primary.ink,
+  },
+  emptyCard: {
+    backgroundColor: theme.colors.neutral.white,
+    borderRadius: theme.borderRadius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.neutral.border,
+    padding: theme.spacing[24],
+    alignItems: 'flex-start',
+    marginBottom: theme.spacing[16],
+  },
+  emptyTitle: {
+    fontFamily: theme.typography.fontDisplay,
+    fontSize: 24,
+    color: theme.colors.primary.ink,
+    marginBottom: theme.spacing[10],
+  },
+  emptyBody: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.base,
+    color: theme.colors.primary.inkMuted,
+    lineHeight: 24,
+    marginBottom: theme.spacing[20],
   },
   emptyButton: {
-    backgroundColor: theme.colors.primary.ink,
-    paddingHorizontal: theme.spacing[24],
-    paddingVertical: theme.spacing[16],
-    borderRadius: theme.borderRadius.sm,
+    backgroundColor: theme.colors.accent.coral,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: theme.spacing[20],
+    paddingVertical: theme.spacing[12],
   },
   emptyButtonText: {
     fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
     color: theme.colors.neutral.white,
-    fontSize: theme.typography.fontSizes.md,
+    fontWeight: theme.typography.fontWeights.semibold,
+  },
+  fab: {
+    position: 'absolute',
+    right: theme.spacing[24],
+    bottom: theme.spacing[32],
+    width: 64,
+    height: 64,
+    borderRadius: 22,
+    backgroundColor: theme.colors.accent.coral,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: theme.colors.primary.ink,
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  swipeRight: {
+    backgroundColor: theme.colors.danger.rose,
+    borderRadius: theme.borderRadius.xl,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    marginBottom: theme.spacing[2],
+    paddingRight: theme.spacing[24],
+  },
+  swipeText: {
+    marginTop: theme.spacing[4],
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.xs,
+    color: theme.colors.neutral.white,
     fontWeight: theme.typography.fontWeights.semibold,
   },
 });

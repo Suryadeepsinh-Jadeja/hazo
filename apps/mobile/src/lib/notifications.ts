@@ -105,3 +105,13 @@ export function handleNotificationTap(navigation: any) {
     }
   });
 }
+
+/**
+ * Register a background/headless handler so Android has a task to dispatch.
+ * We keep this intentionally light; the app already handles foreground taps.
+ */
+export async function handleBackgroundNotificationEvent({ type }: { type: EventType }) {
+  if (type === EventType.PRESS) {
+    return;
+  }
+}

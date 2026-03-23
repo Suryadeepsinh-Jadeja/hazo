@@ -6,6 +6,7 @@ import Config from 'react-native-config';
 
 const api = axios.create({
   baseURL: Config.API_URL || Config.PUBLIC_API_URL || 'http://localhost:8000',
+  timeout: 12000,
 });
 
 api.interceptors.request.use(async (config) => {

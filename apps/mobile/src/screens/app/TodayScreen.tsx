@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect, memo, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal, Dimensions, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useQuery, useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import LinearGradient from 'react-native-linear-gradient';
@@ -10,6 +10,7 @@ import { Linking } from 'react-native';
 import { theme } from '../../constants/theme';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
+import { useGoalStore } from '../../store/goalStore';
 import { getGoalVisualTheme } from '../../lib/goalVisuals';
 
 // --- Types ---
@@ -55,6 +56,9 @@ interface PersonalTask {
   priority?: 'low' | 'medium' | 'high';
   status: string;
 }
+
+const EMPTY_GOALS: GoalSummary[] = [];
+const EMPTY_TASKS: PersonalTask[] = [];
 
 const getTodayDisplayMaterials = (topic?: Topic) => {
   if (!topic) {
@@ -225,12 +229,19 @@ export const TodayScreen = () => {
   const navigation = useNavigation<any>();
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
+  const { goalThemes, setGoals } = useGoalStore();
 
   const [confettiActive, setConfettiActive] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
   const [simplifyTarget, setSimplifyTarget] = useState<{ goalId: string; topicId: string } | null>(null);
   const [completingGoalId, setCompletingGoalId] = useState<string | null>(null);
   const [activeDeckIndex, setActiveDeckIndex] = useState(0);
+  const [allowInitialSkeleton, setAllowInitialSkeleton] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setAllowInitialSkeleton(false), 1800);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Time-based Greeting
   const greeting = useMemo(() => {
@@ -242,8 +253,9 @@ export const TodayScreen = () => {
 
   // Fetch Data
   const {
-    data: goals = [],
+    data: fetchedGoals,
     isLoading: isGoalsLoading,
+    isError: isGoalsError,
     refetch: refetchGoals,
     isRefetching: isGoalsRefetching,
   } = useQuery<GoalSummary[]>({
@@ -252,12 +264,21 @@ export const TodayScreen = () => {
       const res = await api.get('/api/v1/goals');
       return res.data;
     },
+    retry: 0,
   });
+
+  const goals = fetchedGoals ?? EMPTY_GOALS;
 
   const activeGoals = useMemo(
     () => goals.filter((goal) => goal.status === 'active'),
     [goals]
   );
+
+  useEffect(() => {
+    if (fetchedGoals) {
+      setGoals(fetchedGoals);
+    }
+  }, [fetchedGoals, setGoals]);
 
   const todayGoalQueries = useQueries({
     queries: activeGoals.map((goal) => ({
@@ -267,6 +288,7 @@ export const TodayScreen = () => {
         return res.data;
       },
       enabled: !!goal._id,
+      retry: 0,
     })),
   });
 
@@ -284,8 +306,9 @@ export const TodayScreen = () => {
   const isTodayGoalsRefetching = todayGoalQueries.some((query) => query.isRefetching);
 
   const {
-    data: allTasks = [],
+    data: fetchedTasks,
     isLoading: isTasksLoading,
+    isError: isTasksError,
     isRefetching: isTasksRefetching,
     refetch: refetchTasks,
   } = useQuery<PersonalTask[]>({
@@ -294,7 +317,10 @@ export const TodayScreen = () => {
       const res = await api.get('/api/v1/tasks');
       return res.data;
     },
+    retry: 0,
   });
+
+  const allTasks = fetchedTasks ?? EMPTY_TASKS;
 
   const personalTasks = useMemo(() => {
     const tomorrowEnd = getTomorrowEnd();
@@ -398,7 +424,14 @@ export const TodayScreen = () => {
     </View>
   );
 
-  if (isGoalsLoading && isTasksLoading) return renderSkeleton();
+  const showInitialSkeleton =
+    allowInitialSkeleton &&
+    isGoalsLoading &&
+    isTasksLoading &&
+    !isGoalsError &&
+    !isTasksError;
+
+  if (showInitialSkeleton) return renderSkeleton();
 
   const confettiColors = [theme.colors.accent.coral, theme.colors.positive.sage, theme.colors.warning.amber, theme.colors.danger.rose];
 
@@ -422,6 +455,33 @@ export const TodayScreen = () => {
             <Text style={styles.streakText}>{user?.streak_count || 0}</Text>
           </View>
         </View>
+
+        {(isGoalsError || isTasksError) && (
+          <View style={styles.infoCard}>
+            <Text style={styles.infoCardTitle}>Couldn&apos;t fully load your home feed</Text>
+            <Text style={styles.infoCardBody}>
+              Stride couldn&apos;t reach some data right now. Pull to refresh, or check that your backend is reachable from this device.
+            </Text>
+            <TouchableOpacity style={styles.primaryButton} onPress={refreshHome}>
+              <Text style={styles.primaryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {!showInitialSkeleton &&
+          !isGoalsError &&
+          !isTasksError &&
+          isGoalsLoading &&
+          isTasksLoading &&
+          goalCards.length === 0 && (
+            <View style={styles.infoCard}>
+              <ActivityIndicator color={theme.colors.accent.coral} style={styles.loadingSpinner} />
+              <Text style={styles.infoCardTitle}>Loading your home feed</Text>
+              <Text style={styles.infoCardBody}>
+                Stride is still waiting on your goals and tasks. If this takes too long, pull to refresh.
+              </Text>
+            </View>
+          )}
 
         {goalCards.length > 0 && (
           <View style={styles.tasksSection}>
@@ -469,7 +529,8 @@ export const TodayScreen = () => {
                 const isCompletingThisGoal = completeMutation.isPending && completingGoalId === goal._id;
                 const displayMaterials = getTodayDisplayMaterials(primaryTopic);
                 const primaryMaterial = displayMaterials[0];
-                const visualTheme = getGoalVisualTheme(goal._id || goal.title);
+                const visualTheme =
+                  goalThemes[goal._id] || getGoalVisualTheme(goal._id || goal.title);
                 const displayTotalDays = taskCard?.total_days || goal.total_days || '—';
 
                 if (query?.isError) {
@@ -626,7 +687,8 @@ export const TodayScreen = () => {
 
             <View style={styles.deckDotsRow}>
               {goalCards.map(({ goal }) => {
-                const dotTheme = getGoalVisualTheme(goal._id || goal.title);
+                const dotTheme =
+                  goalThemes[goal._id] || getGoalVisualTheme(goal._id || goal.title);
                 const dotIndex = goalCards.findIndex((item) => item.goal._id === goal._id);
                 const isActive = dotIndex === activeDeckIndex;
 
@@ -1474,6 +1536,9 @@ const styles = StyleSheet.create({
     color: theme.colors.primary.inkMuted,
     lineHeight: 22,
     marginBottom: theme.spacing[16],
+  },
+  loadingSpinner: {
+    marginBottom: theme.spacing[12],
   },
   infoCardAlt: {
     backgroundColor: theme.colors.neutral.white,
