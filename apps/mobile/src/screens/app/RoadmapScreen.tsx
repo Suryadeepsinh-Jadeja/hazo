@@ -147,7 +147,7 @@ export const RoadmapScreen = () => {
       <TouchableWithoutFeedback onPressIn={onPressInFab} onPressOut={onPressOutFab} onPress={handleFabPress}>
         <Animated.View style={[styles.fab, fabAnimatedStyle, { backgroundColor: visualTheme.accent }]}>
            <BotMessageSquare color={theme.colors.neutral.white} size={24} />
-           {!roadmap.mentor_visited_today && <View style={[styles.fabBadge, { backgroundColor: visualTheme.accentSoft, borderColor: visualTheme.accent }]} />}
+           {roadmap?.mentor_visited_today === false && <View style={[styles.fabBadge, { backgroundColor: visualTheme.accentSoft, borderColor: visualTheme.accent }]} />}
         </Animated.View>
       </TouchableWithoutFeedback>
     </View>

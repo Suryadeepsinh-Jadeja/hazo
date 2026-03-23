@@ -2,11 +2,13 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useQuery } from '@tanstack/react-query';
 import { Home, CheckCircle, Target, User } from 'lucide-react-native';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { theme } from '../constants/theme';
+import api from '../lib/api';
 import { TodayScreen } from '../screens/app/TodayScreen';
 import { TasksScreen } from '../screens/app/TasksScreen';
 import { GoalsScreen } from '../screens/app/GoalsScreen';
@@ -25,6 +27,17 @@ const Stack = createNativeStackNavigator();
 
 const MainTabs = () => {
   const insets = useSafeAreaInsets();
+  const { data: tasks = [] } = useQuery<any[]>({
+    queryKey: ['tasks', 'tab-badge'],
+    queryFn: async () => {
+      const res = await api.get('/api/v1/tasks');
+      return res.data;
+    },
+    staleTime: 60 * 1000,
+  });
+  const pendingTaskCount = tasks.filter(
+    (task) => task && task.status !== 'done' && task.status !== 'abandoned'
+  ).length;
 
   return (
     <Tab.Navigator
@@ -63,7 +76,6 @@ const MainTabs = () => {
             <View style={styles.iconContainer}>
               {focused && <View style={styles.activeTabIndicator} />}
               <Home color={color} size={22} strokeWidth={focused ? 2.5 : 2} style={{ opacity: focused ? 1 : 0.55 }} />
-              <View style={styles.badgeDot} />
             </View>
           ),
         }}
@@ -76,9 +88,13 @@ const MainTabs = () => {
             <View style={styles.iconContainer}>
               {focused && <View style={styles.activeTabIndicator} />}
               <CheckCircle color={color} size={22} strokeWidth={focused ? 2.5 : 2} style={{ opacity: focused ? 1 : 0.55 }} />
-              <View style={styles.badgeCountContainer}>
-                <Text style={styles.badgeCountText}>3</Text>
-              </View>
+              {pendingTaskCount > 0 ? (
+                <View style={styles.badgeCountContainer}>
+                  <Text style={styles.badgeCountText}>
+                    {pendingTaskCount > 99 ? '99+' : pendingTaskCount}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           ),
         }}
@@ -144,15 +160,6 @@ const styles = StyleSheet.create({
     height: 2,
     backgroundColor: theme.colors.accent.coral,
     borderRadius: 1,
-  },
-  badgeDot: {
-    position: 'absolute',
-    top: 6,
-    right: -4,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: theme.colors.accent.coral,
   },
   badgeCountContainer: {
     position: 'absolute',
