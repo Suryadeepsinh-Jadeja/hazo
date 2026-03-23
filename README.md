@@ -136,7 +136,7 @@ Create a Gemini API key and set:
 GOOGLE_GEMINI_API_KEY
 ```
 
-You can also choose the Gemini model through backend env:
+You must also choose the Gemini model through backend env:
 
 ```text
 GEMINI_MODEL_NAME
@@ -425,6 +425,7 @@ Use the correct `API_URL`:
 Check:
 
 - `GOOGLE_GEMINI_API_KEY` is present in `apps/api/.env`
+- `GEMINI_MODEL_NAME` is present in `apps/api/.env`
 - the backend was restarted after changing it
 - your Gemini quota has not been exhausted
 

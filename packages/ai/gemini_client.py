@@ -39,8 +39,12 @@ genai.configure(api_key=_API_KEY)
 
 logger = logging.getLogger("stride.ai.gemini")
 
-DEFAULT_MODEL_NAME = "gemini-flash-latest"
-MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME", DEFAULT_MODEL_NAME).strip() or DEFAULT_MODEL_NAME
+MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME", "").strip()
+if not MODEL_NAME:
+    raise EnvironmentError(
+        "GEMINI_MODEL_NAME is not set. "
+        "Add it to apps/api/.env before starting the server."
+    )
 
 logger.info("Using Gemini model: %s", MODEL_NAME)
 

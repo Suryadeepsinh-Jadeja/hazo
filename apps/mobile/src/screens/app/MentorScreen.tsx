@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, KeyboardAvoidingView, Platform, Keyboard, Linking } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming, withDelay } from 'react-native-reanimated';
 import { ChevronLeft, ArrowUp } from 'lucide-react-native';
@@ -20,6 +20,9 @@ const QUICK_ACTIONS = [
   "Explain like I'm 10",
   "What should I focus on?"
 ];
+
+const MARKDOWN_LINK_OR_URL_RE = /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))|(https?:\/\/[^\s]+)/g;
+const BOLD_RE = /(\*\*[^*]+\*\*)/g;
 
 const TypingDot = ({ delay }: { delay: number }) => {
   const scale = useSharedValue(1);
@@ -77,6 +80,118 @@ export const MentorScreen = () => {
     return 'I could not start the mentor chat right now. Please try again in a moment.';
   };
 
+  const openMessageLink = async (url: string) => {
+    const normalizedUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    const supported = await Linking.canOpenURL(normalizedUrl);
+    if (!supported) {
+      throw new Error(`Unable to open link: ${normalizedUrl}`);
+    }
+    await Linking.openURL(normalizedUrl);
+  };
+
+  const renderBoldText = (text: string, isUser: boolean, keyPrefix: string) => {
+    const parts = text.split(BOLD_RE);
+
+    return parts
+      .filter((part) => part.length > 0)
+      .map((part, index) => {
+        const isBold = part.startsWith('**') && part.endsWith('**');
+        const content = isBold ? part.slice(2, -2) : part;
+
+        return (
+          <Text
+            key={`${keyPrefix}-bold-${index}`}
+            style={isBold ? [styles.textBold, isUser ? styles.textUser : styles.textAi] : undefined}
+          >
+            {content}
+          </Text>
+        );
+      });
+  };
+
+  const renderFormattedText = (text: string, isUser: boolean) => {
+    const nodes: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let matchIndex = 0;
+
+    for (const match of text.matchAll(MARKDOWN_LINK_OR_URL_RE)) {
+      const fullMatch = match[0];
+      const matchStart = match.index ?? 0;
+
+      if (matchStart > lastIndex) {
+        nodes.push(...renderBoldText(text.slice(lastIndex, matchStart), isUser, `segment-${matchIndex}`));
+      }
+
+      const markdownLabel = match[2];
+      const markdownUrl = match[3];
+      const rawUrl = match[4];
+      const linkLabel = markdownLabel || rawUrl || fullMatch;
+      const linkUrl = markdownUrl || rawUrl || fullMatch;
+
+      nodes.push(
+        <Text
+          key={`link-${matchIndex}`}
+          style={[styles.textLink, isUser ? styles.textUser : styles.textAi]}
+          onPress={() => {
+            openMessageLink(linkUrl).catch((error) => {
+              console.warn('Failed to open mentor link:', error);
+            });
+          }}
+        >
+          {linkLabel}
+        </Text>
+      );
+
+      lastIndex = matchStart + fullMatch.length;
+      matchIndex += 1;
+    }
+
+    if (lastIndex < text.length) {
+      nodes.push(...renderBoldText(text.slice(lastIndex), isUser, `segment-tail-${matchIndex}`));
+    }
+
+    return nodes.length > 0 ? nodes : text;
+  };
+
+  const applySsePayload = (
+    payload: string,
+    assistantMessageId: string,
+    currentContent: string,
+  ) => {
+    let nextContent = currentContent;
+    let isDone = false;
+
+    const lines = payload.split(/\r?\n/);
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line.startsWith('data: ')) {
+        continue;
+      }
+
+      try {
+        const data = JSON.parse(line.replace('data: ', ''));
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        if (typeof data.delta === 'string' && data.delta.length > 0) {
+          nextContent += data.delta;
+          setMessages(prev => prev.map(m => (
+            m.id === assistantMessageId ? { ...m, content: nextContent } : m
+          )));
+        }
+        if (data.done) {
+          isDone = true;
+        }
+      } catch (error) {
+        if (error instanceof Error) {
+          throw error;
+        }
+      }
+    }
+
+    return { nextContent, isDone };
+  };
+
   const handleSend = async (overrideText?: string) => {
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() || isStreaming || rateLimited || !token || !goalId) return;
@@ -107,7 +222,8 @@ export const MentorScreen = () => {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`, 
-          'Content-Type': 'application/json' 
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
         },
         body: JSON.stringify({ 
           goal_id: goalId, 
@@ -146,41 +262,50 @@ export const MentorScreen = () => {
         throw new Error(detail);
       }
 
-      if (!response.body) throw new Error('No response body from fetch stream.');
-      
-      const reader = (response.body as any).getReader();
+      let accumulatedContent = '';
+      const responseBody = response.body as any;
+
+      if (!responseBody?.getReader) {
+        const rawPayload = await response.text();
+        if (!rawPayload.trim()) {
+          throw new Error('Mentor returned an empty response.');
+        }
+        const { nextContent } = applySsePayload(rawPayload, assistantMessageId, accumulatedContent);
+        accumulatedContent = nextContent;
+        return;
+      }
+
+      const reader = responseBody.getReader();
       const decoder = new TextDecoder('utf-8');
 
       let done = false;
-      let accumulatedContent = '';
+      let buffer = '';
 
       while (!done) {
         const { value, done: readerDone } = await reader.read();
         done = readerDone;
-        if (value) {
-          const chunk = decoder.decode(value, { stream: !done });
-          const lines = chunk.split('\n');
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-               try {
-                 const data = JSON.parse(line.replace('data: ', ''));
-                 if (data.error) {
-                   throw new Error(data.error);
-                 }
-                 if (data.delta) {
-                   accumulatedContent += data.delta;
-                   setMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: accumulatedContent } : m));
-                 }
-                 if (data.done) {
-                   done = true;
-                 }
-               } catch (e) {
-                 // ignore JSON parse errors for split framing chunks
-               }
-            }
+        if (!value) {
+          continue;
+        }
+
+        buffer += decoder.decode(value, { stream: !done });
+        const events = buffer.split('\n\n');
+        buffer = events.pop() || '';
+
+        for (const eventPayload of events) {
+          const { nextContent, isDone } = applySsePayload(eventPayload, assistantMessageId, accumulatedContent);
+          accumulatedContent = nextContent;
+          if (isDone) {
+            done = true;
+            break;
           }
         }
+      }
+
+      if (buffer.trim()) {
+        const { nextContent } = applySsePayload(buffer, assistantMessageId, accumulatedContent);
+        accumulatedContent = nextContent;
       }
     } catch (error) {
       const friendlyError = formatMentorError(error);
@@ -216,7 +341,7 @@ export const MentorScreen = () => {
         
         <View style={[styles.messageBubble, isUser ? styles.bubbleUser : styles.bubbleAi]}>
           <Text style={[styles.messageText, isUser ? styles.textUser : styles.textAi]}>
-            {item.content}
+            {renderFormattedText(item.content, isUser)}
           </Text>
         </View>
 
@@ -451,6 +576,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colors.primary.ink,
     lineHeight: 22,
+  },
+  textBold: {
+    fontWeight: theme.typography.fontWeights.semibold,
+  },
+  textLink: {
+    color: theme.colors.accent.coral,
+    textDecorationLine: 'underline',
   },
   exchangeSeparator: {
     height: 1,
