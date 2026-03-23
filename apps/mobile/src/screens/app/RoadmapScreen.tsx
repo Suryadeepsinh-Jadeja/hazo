@@ -54,7 +54,12 @@ export const RoadmapScreen = () => {
 
   const onPressInFab = () => { fabScale.value = withTiming(0.95, { duration: 100 }); };
   const onPressOutFab = () => { fabScale.value = withTiming(1, { duration: 100 }); };
-  const handleFabPress = () => navigation.navigate('MentorScreen', { goalId });
+  const currentTopicTitle =
+    roadmap?.phases
+      ?.flatMap((phase: any) => phase.topics || [])
+      ?.find((topic: any) => topic.day_index === roadmap?.current_day_index)?.title ||
+    roadmap?.title;
+  const handleFabPress = () => navigation.navigate('MentorScreen', { goalId, topicTitle: currentTopicTitle });
 
   const fabAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: fabScale.value }]

@@ -296,8 +296,8 @@ export const TodayScreen = () => {
     }
   }, [completeMutation]);
 
-  const handleAskMentor = useCallback((goalId: string) => {
-    navigation.navigate('Mentor', { goalId });
+  const handleAskMentor = useCallback((goalId: string, topicTitle?: string) => {
+    navigation.navigate('Mentor', { goalId, topicTitle });
   }, [navigation]);
 
   const handleOpenLink = useCallback(async (url: string) => {
@@ -452,7 +452,10 @@ export const TodayScreen = () => {
                       <Text style={styles.doneButtonText}>{completeMutation.isPending ? 'Completing...' : 'Mark as Done ✓'}</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.ghostButton} onPress={() => handleAskMentor(goal._id)}>
+                    <TouchableOpacity
+                      style={styles.ghostButton}
+                      onPress={() => handleAskMentor(goal._id, primaryTopic?.title || taskCard.goal_title || goal.title)}
+                    >
                       <Text style={styles.ghostButtonText}>Ask AI Mentor</Text>
                     </TouchableOpacity>
                   </View>

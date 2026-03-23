@@ -77,6 +77,17 @@ async def _get_redis_json(key: str) -> Optional[dict]:
     return json.loads(raw) if raw else None
 
 
+def _dedupe_non_empty(values: List[Optional[str]]) -> List[str]:
+    seen: set[str] = set()
+    result: List[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
 def _seconds_until_midnight_utc() -> int:
     """Seconds from now until midnight UTC."""
     now = datetime.now(timezone.utc)
@@ -89,7 +100,7 @@ def _safe_str(oid: Any) -> str:
 
 
 async def _load_mentor_context(
-    user_id: str,
+    user_ids: List[str],
     goal_id: str,
 ) -> Dict[str, Any]:
     """
@@ -105,7 +116,7 @@ async def _load_mentor_context(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid goal_id.")
 
-    goal_doc = await goals_col.find_one({"_id": oid, "user_id": user_id})
+    goal_doc = await goals_col.find_one({"_id": oid, "user_id": {"$in": user_ids}})
     if goal_doc is None:
         raise HTTPException(status_code=404, detail="Goal not found.")
 
@@ -144,7 +155,7 @@ async def _load_mentor_context(
 
     # Top 5 skills by mastery
     skills_cursor = (
-        skills_col.find({"user_id": user_id, "goal_id": goal_id})
+        skills_col.find({"user_id": {"$in": user_ids}, "goal_id": goal_id})
         .sort("mastery_level", -1)
         .limit(5)
     )
@@ -153,7 +164,11 @@ async def _load_mentor_context(
         recent_skills.append(skill.get("name", ""))
 
     # Today's task card from Redis (for extra context if needed)
-    daily_card = await _get_redis_json(f"daily:task:{user_id}:{goal_id}")
+    daily_card = None
+    for user_id in user_ids:
+        daily_card = await _get_redis_json(f"daily:task:{user_id}:{goal_id}")
+        if daily_card:
+            break
 
     return {
         "goal_title": goal_title,
@@ -188,9 +203,10 @@ async def mentor_chat(
     Error event:
         data: {"error": "..."}\n\n
     """
-    user_id = current_user.supabase_id
+    primary_user_id = str(current_user.id or current_user.supabase_id)
+    user_lookup_ids = _dedupe_non_empty([primary_user_id, current_user.supabase_id])
     today_str = datetime.utcnow().strftime("%Y-%m-%d")
-    rate_key = f"mentor:rate:{user_id}:{today_str}"
+    rate_key = f"mentor:rate:{primary_user_id}:{today_str}"
 
     # ── Rate limiting ──────────────────────────────────────────────────────
     rdb = get_redis()
@@ -214,7 +230,7 @@ async def mentor_chat(
     await pipe.execute()
 
     # ── Load mentor context ─────────────────────────────────────────────────
-    ctx = await _load_mentor_context(user_id=user_id, goal_id=body.goal_id)
+    ctx = await _load_mentor_context(user_ids=user_lookup_ids, goal_id=body.goal_id)
 
     system_prompt = mentor_system_prompt(
         goal_title=ctx["goal_title"],
@@ -259,14 +275,14 @@ async def mentor_chat(
             await mentor_col.insert_many(
                 [
                     {
-                        "user_id": user_id,
+                        "user_id": primary_user_id,
                         "goal_id": body.goal_id,
                         "role": "user",
                         "content": body.message,
                         "created_at": now,
                     },
                     {
-                        "user_id": user_id,
+                        "user_id": primary_user_id,
                         "goal_id": body.goal_id,
                         "role": "model",
                         "content": full_response,
@@ -309,9 +325,10 @@ async def get_mentor_history(
         )
 
     mentor_col = get_mentor_sessions_col()
+    user_lookup_ids = _dedupe_non_empty([str(current_user.id), current_user.supabase_id])
     cursor = (
         mentor_col.find(
-            {"user_id": current_user.supabase_id, "goal_id": goal_id},
+            {"user_id": {"$in": user_lookup_ids}, "goal_id": goal_id},
             {"_id": 0, "role": 1, "content": 1, "created_at": 1},
         )
         .sort("created_at", -1)

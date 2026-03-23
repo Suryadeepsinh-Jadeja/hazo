@@ -70,6 +70,13 @@ export const MentorScreen = () => {
 
   const flatListRef = useRef<FlatList>(null);
 
+  const formatMentorError = (error: unknown) => {
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+    return 'I could not start the mentor chat right now. Please try again in a moment.';
+  };
+
   const handleSend = async (overrideText?: string) => {
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() || isStreaming || rateLimited || !token || !goalId) return;
@@ -116,7 +123,28 @@ export const MentorScreen = () => {
         return;
       }
 
-      if (!response.ok) throw new Error(`Network error: ${response.status}`);
+      if (!response.ok) {
+        let detail = `Mentor request failed (${response.status}).`;
+        try {
+          const errorPayload = await response.json();
+          const errorDetail = errorPayload?.detail;
+          if (typeof errorDetail === 'string') {
+            detail = errorDetail;
+          } else if (errorDetail?.detail && typeof errorDetail.detail === 'string') {
+            detail = errorDetail.detail;
+          }
+        } catch {
+          try {
+            const errorText = await response.text();
+            if (errorText) {
+              detail = errorText;
+            }
+          } catch {
+            // ignore body parse failures
+          }
+        }
+        throw new Error(detail);
+      }
 
       if (!response.body) throw new Error('No response body from fetch stream.');
       
@@ -137,6 +165,9 @@ export const MentorScreen = () => {
             if (line.startsWith('data: ')) {
                try {
                  const data = JSON.parse(line.replace('data: ', ''));
+                 if (data.error) {
+                   throw new Error(data.error);
+                 }
                  if (data.delta) {
                    accumulatedContent += data.delta;
                    setMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: accumulatedContent } : m));
@@ -152,27 +183,16 @@ export const MentorScreen = () => {
         }
       }
     } catch (error) {
-      console.warn('Network or Decode Error on Stream, falling back to mock UI:', error);
-       
-       // Note: Fallback mock streaming directly emulates a typewriter
-       let mockText = `I can see you are studying ${topicTitle}. Here is a clear breakdown of how you should approach this...`;
-       let currentText = '';
-       let chars = mockText.split('');
-       
-       let index = 0;
-       return new Promise<void>((resolve) => {
-         const mockInterval = setInterval(() => {
-           if (index >= chars.length) {
-             clearInterval(mockInterval);
-             setIsStreaming(false);
-             resolve();
-             return;
-           }
-           currentText += chars[index];
-           setMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: currentText } : m));
-           index++;
-         }, 30); // 30ms per character typewriter speed
-       });
+      const friendlyError = formatMentorError(error);
+      console.warn('Mentor stream failed:', friendlyError);
+      setMessages(prev => prev.map(m => (
+        m.id === assistantMessageId
+          ? {
+              ...m,
+              content: `I couldn't start the mentor chat right now.\n\n${friendlyError}`,
+            }
+          : m
+      )));
     } finally {
       setIsStreaming(false);
     }

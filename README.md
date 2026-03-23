@@ -136,6 +136,18 @@ Create a Gemini API key and set:
 GOOGLE_GEMINI_API_KEY
 ```
 
+You can also choose the Gemini model through backend env:
+
+```text
+GEMINI_MODEL_NAME
+```
+
+Example values:
+
+- `gemini-flash-latest`
+- `gemini-2.5-flash`
+- `gemini-2.5-pro`
+
 ### 5. Sentry
 
 Sentry is optional.
@@ -167,6 +179,7 @@ Fill [apps/api/.env](/Users/suryadeepsinhjadeja/Stride/apps/api/.env) with:
 
 ```env
 GOOGLE_GEMINI_API_KEY=
+GEMINI_MODEL_NAME=gemini-flash-latest
 MONGODB_URI=
 REDIS_URL=
 SUPABASE_URL=
