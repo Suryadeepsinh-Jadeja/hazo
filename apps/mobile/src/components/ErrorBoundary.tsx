@@ -41,7 +41,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
             </View>
             <Text style={styles.title}>Oops! Something broke.</Text>
             <Text style={styles.subtitle}>
-              Stride encountered an unexpected issue. Don't worry, your progress is safely 
+              Hazo encountered an unexpected issue. Don't worry, your progress is safely 
               synced to the cloud.
             </Text>
 

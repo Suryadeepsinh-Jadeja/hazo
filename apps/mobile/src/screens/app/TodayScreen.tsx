@@ -460,7 +460,7 @@ export const TodayScreen = () => {
           <View style={styles.infoCard}>
             <Text style={styles.infoCardTitle}>Couldn&apos;t fully load your home feed</Text>
             <Text style={styles.infoCardBody}>
-              Stride couldn&apos;t reach some data right now. Pull to refresh, or check that your backend is reachable from this device.
+              Hazo couldn&apos;t reach some data right now. Pull to refresh, or check that your backend is reachable from this device.
             </Text>
             <TouchableOpacity style={styles.primaryButton} onPress={refreshHome}>
               <Text style={styles.primaryButtonText}>Try Again</Text>
@@ -478,7 +478,7 @@ export const TodayScreen = () => {
               <ActivityIndicator color={theme.colors.accent.coral} style={styles.loadingSpinner} />
               <Text style={styles.infoCardTitle}>Loading your home feed</Text>
               <Text style={styles.infoCardBody}>
-                Stride is still waiting on your goals and tasks. If this takes too long, pull to refresh.
+                Hazo is still waiting on your goals and tasks. If this takes too long, pull to refresh.
               </Text>
             </View>
           )}
@@ -713,7 +713,7 @@ export const TodayScreen = () => {
           <View style={styles.infoCard}>
             <Text style={styles.infoCardTitle}>No active goal yet</Text>
             <Text style={styles.infoCardBody}>
-              You can still work through your personal tasks here, and add a goal when you want Stride to plan the bigger roadmap.
+              You can still work through your personal tasks here, and add a goal when you want Hazo to plan the bigger roadmap.
             </Text>
             <TouchableOpacity style={styles.primaryButton} onPress={() => navigation.navigate('Goals')}>
               <Text style={styles.primaryButtonText}>Open Goals</Text>
@@ -765,7 +765,7 @@ export const TodayScreen = () => {
          <View style={styles.modalOverlay}>
            <View style={styles.bottomSheet}>
              <Text style={styles.modalTitle}>Too much today?</Text>
-             <Text style={styles.modalBody}>No problem. For now, Stride can skip today&apos;s top topic and move you forward without breaking the plan.</Text>
+             <Text style={styles.modalBody}>No problem. For now, Hazo can skip today&apos;s top topic and move you forward without breaking the plan.</Text>
              
              <TouchableOpacity
                style={styles.primaryButton}

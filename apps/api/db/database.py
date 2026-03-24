@@ -17,7 +17,7 @@ client = AsyncIOMotorClient(
     connectTimeoutMS=5000,
     retryWrites=True,
 )
-db = client.stride
+db = client.hazo
 
 def get_database():
     return db

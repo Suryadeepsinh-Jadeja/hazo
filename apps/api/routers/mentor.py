@@ -1,5 +1,5 @@
 """
-mentor.py — AI mentor chat and history endpoints for Stride.
+mentor.py — AI mentor chat and history endpoints for Hazo.
 
 Endpoints:
   POST   /chat               streaming SSE chat with Gemini mentor
@@ -33,7 +33,7 @@ from packages.ai.gemini_client import stream_gemini
 from packages.ai.prompts import mentor_system_prompt
 
 load_dotenv()
-logger = logging.getLogger("stride.routers.mentor")
+logger = logging.getLogger("hazo.routers.mentor")
 router = APIRouter(prefix="/mentor")
 
 # ---------------------------------------------------------------------------

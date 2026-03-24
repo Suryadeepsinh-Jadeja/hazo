@@ -1,6 +1,6 @@
-# Stride
+# Hazo
 
-Stride is an AI-guided goal execution app built as a monorepo:
+Hazo is an AI-guided goal execution app built as a monorepo:
 
 - `apps/api`: FastAPI backend
 - `apps/mobile`: React Native mobile app
@@ -16,7 +16,7 @@ The app flow is:
 ## Monorepo Structure
 
 ```text
-Stride/
+Hazo/
 ├── apps/
 │   ├── api/        # FastAPI backend
 │   └── mobile/     # React Native app
@@ -61,8 +61,8 @@ Notes:
 2. Clone your fork:
 
 ```bash
-git clone https://github.com/<your-username>/stride.git
-cd stride
+git clone https://github.com/<your-username>/hazo.git
+cd hazo
 ```
 
 3. Install root workspace dependencies:
@@ -82,7 +82,6 @@ Create a Supabase project and collect:
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_KEY`
-- `SUPABASE_JWT_SECRET`
 
 The mobile app uses:
 
@@ -93,12 +92,14 @@ The backend uses:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_KEY`
-- `SUPABASE_JWT_SECRET`
+
+The backend verifies access tokens against Supabase JWT signing keys via the
+JWKS endpoint, so you do not need to set the legacy `SUPABASE_JWT_SECRET`.
 
 If you use Google OAuth with Supabase, add the mobile deep link redirect:
 
 ```text
-stride://auth
+hazo://auth
 ```
 
 Android already has this deep link in the native manifest.
@@ -110,7 +111,7 @@ Create a MongoDB database and set `MONGODB_URI`.
 The backend uses the database named:
 
 ```text
-stride
+hazo
 ```
 
 Collections are created automatically when data is written.
@@ -128,25 +129,42 @@ Redis is used for:
 
 The backend starts schedulers automatically on startup, so Redis should be reachable before launching the API.
 
-### 4. Gemini
+### 4. LLM Provider
 
-Create a Gemini API key and set:
+Hazo's backend can use either Gemini or OpenRouter.
+
+Set the provider in `apps/api/.env`:
+
+```text
+LLM_PROVIDER=gemini
+```
+
+For Gemini, set:
 
 ```text
 GOOGLE_GEMINI_API_KEY
-```
-
-You must also choose the Gemini model through backend env:
-
-```text
 GEMINI_MODEL_NAME
 ```
 
-Example values:
+Example Gemini models:
 
 - `gemini-flash-latest`
 - `gemini-2.5-flash`
 - `gemini-2.5-pro`
+
+For OpenRouter, set:
+
+```text
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY
+OPENROUTER_MODEL_NAME
+```
+
+Optional OpenRouter envs:
+
+- `OPENROUTER_BASE_URL`
+- `OPENROUTER_SITE_URL`
+- `OPENROUTER_APP_NAME`
 
 ### 5. Sentry
 
@@ -163,8 +181,8 @@ If omitted, the app still runs.
 
 This repo already includes example env files:
 
-- [apps/api/.env.example](/Users/suryadeepsinhjadeja/Stride/apps/api/.env.example)
-- [apps/mobile/.env.example](/Users/suryadeepsinhjadeja/Stride/apps/mobile/.env.example)
+- [apps/api/.env.example](apps/api/.env.example)
+- [apps/mobile/.env.example](apps/mobile/.env.example)
 
 Create real env files from them:
 
@@ -175,16 +193,21 @@ cp apps/mobile/.env.example apps/mobile/.env
 
 ### Backend Env
 
-Fill [apps/api/.env](/Users/suryadeepsinhjadeja/Stride/apps/api/.env) with:
+Fill [apps/api/.env](apps/api/.env) with:
 
 ```env
+LLM_PROVIDER=gemini
 GOOGLE_GEMINI_API_KEY=
 GEMINI_MODEL_NAME=gemini-flash-latest
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL_NAME=
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_SITE_URL=
+OPENROUTER_APP_NAME=Hazo
 MONGODB_URI=
 REDIS_URL=
 SUPABASE_URL=
 SUPABASE_SERVICE_KEY=
-SUPABASE_JWT_SECRET=
 SENTRY_DSN=
 NODE_ENV=development
 PORT=8000
@@ -193,7 +216,7 @@ CORS_ORIGINS=http://localhost:8081
 
 ### Mobile Env
 
-Fill [apps/mobile/.env](/Users/suryadeepsinhjadeja/Stride/apps/mobile/.env) with:
+Fill [apps/mobile/.env](apps/mobile/.env) with:
 
 ```env
 API_URL=
@@ -263,14 +286,14 @@ When the API starts, it will:
 From the repo root, start Metro:
 
 ```bash
-cd /path/to/stride
+cd /path/to/hazo
 npm --workspace apps/mobile start
 ```
 
 In a second terminal, run Android:
 
 ```bash
-cd /path/to/stride
+cd /path/to/hazo
 npm --workspace apps/mobile run android
 ```
 
@@ -302,7 +325,7 @@ npm run ios
 
 Important caveat:
 
-- Android deep linking for `stride://auth` is configured.
+- Android deep linking for `hazo://auth` is configured.
 - If Supabase OAuth redirect handling does not work on iOS, you may need to add the same URL scheme to the iOS native project as part of your local setup.
 
 ## Recommended Local Dev Workflow
@@ -333,14 +356,14 @@ npm run android
 
 ## Seeding Demo Data
 
-The repo includes demo seed/reset scripts in [apps/api/scripts](/Users/suryadeepsinhjadeja/Stride/apps/api/scripts).
+The repo includes demo seed/reset scripts in [apps/api/scripts](apps/api/scripts).
 
 To seed a demo user:
 
 ```bash
 cd apps/api
 source .venv/bin/activate
-python -m scripts.seed_demo --email demo@stride.app --password Demo1234!
+python -m scripts.seed_demo --email demo@hazo.app --password Demo1234!
 ```
 
 This script creates:
@@ -368,7 +391,7 @@ cd apps/mobile/android
 
 Output:
 
-- [app-release.apk](/Users/suryadeepsinhjadeja/Stride/apps/mobile/android/app/build/outputs/apk/release/app-release.apk)
+- [app-release.apk](apps/mobile/android/app/build/outputs/apk/release/app-release.apk)
 
 Important:
 
@@ -408,7 +431,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 Check:
 
-- `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, and `SUPABASE_JWT_SECRET` in `apps/api/.env`
+- `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` in `apps/api/.env`
 - `SUPABASE_URL` and `SUPABASE_ANON_KEY` in `apps/mobile/.env`
 - that the user is actually signed in
 - that your backend was restarted after changing env vars
@@ -420,14 +443,19 @@ Use the correct `API_URL`:
 - Android emulator: `http://10.0.2.2:8000`
 - Physical device: `http://<your-lan-ip>:8000`
 
-### Gemini fails
+### LLM provider fails
 
 Check:
 
-- `GOOGLE_GEMINI_API_KEY` is present in `apps/api/.env`
-- `GEMINI_MODEL_NAME` is present in `apps/api/.env`
+- `LLM_PROVIDER` is set correctly in `apps/api/.env`
+- if using Gemini:
+  - `GOOGLE_GEMINI_API_KEY` is present
+  - `GEMINI_MODEL_NAME` is present
+- if using OpenRouter:
+  - `OPENROUTER_API_KEY` is present
+  - `OPENROUTER_MODEL_NAME` is present
 - the backend was restarted after changing it
-- your Gemini quota has not been exhausted
+- the selected provider quota has not been exhausted
 
 ### Redis-related goal or mentor issues
 

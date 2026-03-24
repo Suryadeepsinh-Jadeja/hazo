@@ -1,4 +1,4 @@
-package com.stride
+package com.hazo
 
 import android.app.Application
 import com.lugg.RNCConfig.RNCConfigPackage

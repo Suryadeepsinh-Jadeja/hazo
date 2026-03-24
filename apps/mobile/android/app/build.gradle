@@ -79,14 +79,14 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.stride"
+    namespace "com.hazo"
     defaultConfig {
-        applicationId "com.stride"
+        applicationId "com.hazo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
-        resValue "string", "build_config_package", "com.stride"
+        resValue "string", "build_config_package", "com.hazo"
     }
     signingConfigs {
         debug {

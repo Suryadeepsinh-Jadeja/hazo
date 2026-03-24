@@ -37,7 +37,7 @@ export const SkillsScreen = () => {
     if (user?.plan !== 'pro') {
       Alert.alert(
         "Pro Feature", 
-        "Exporting your Skill Graph and raw JSON analytics requires Stride Pro.",
+        "Exporting your Skill Graph and raw JSON analytics requires Hazo Pro.",
         [
           { text: "Cancel", style: "cancel" },
           { text: "Upgrade to Pro", style: "default" }

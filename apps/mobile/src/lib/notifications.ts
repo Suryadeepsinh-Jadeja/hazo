@@ -71,7 +71,7 @@ export async function scheduleDailyReminder(time: string) {
     await notifee.createTriggerNotification(
       {
         title: 'Time to learn! 🚀',
-        body: 'Your daily Stride task is waiting for you.',
+        body: 'Your daily Hazo task is waiting for you.',
         android: {
           channelId,
           pressAction: { id: 'default' },

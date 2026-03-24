@@ -1,5 +1,5 @@
 """
-link_health_checker.py — Weekly resource link health checker for Stride.
+link_health_checker.py — Weekly resource link health checker for Hazo.
 
 Runs every Sunday at 20:30 UTC (~midnight IST) via APScheduler.
 For every active goal → every resource in every topic:
@@ -33,7 +33,7 @@ from db.database import get_goals_col
 from packages.ai.gemini_client import call_gemini_json
 from packages.ai.prompts import resource_curation_prompt
 
-logger = logging.getLogger("stride.jobs.link_health")
+logger = logging.getLogger("hazo.jobs.link_health")
 
 _REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 _LINK_TTL_SECONDS = 7 * 24 * 3600  # 7 days

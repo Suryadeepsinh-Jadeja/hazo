@@ -1,5 +1,5 @@
 /**
- * Represents a user in the Stride platform.
+ * Represents a user in the Hazo platform.
  */
 export interface User {
   id: string;

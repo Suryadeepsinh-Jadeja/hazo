@@ -1,5 +1,5 @@
 """
-Prompt templates for the Stride AI-powered goal execution app.
+Prompt templates for the Hazo AI-powered goal execution app.
 
 Every function accepts Python inputs and returns a fully-formed prompt string
 ready to be sent to Gemini.  Each prompt embeds explicit output-format
@@ -201,7 +201,7 @@ def roadmap_generation_prompt(profile: dict) -> str:
     max_topic_minutes = int(daily_hours * 60 * 1.2)
     desired_phase_count = min(6, max(3, timeline_days // 10))
 
-    return f"""You are an elite curriculum designer building a concise, focused learning roadmap for Stride.
+    return f"""You are an elite curriculum designer building a concise, focused learning roadmap for Hazo.
 
 ── LEARNER PROFILE ──────────────────────────────────────────
 
@@ -623,7 +623,7 @@ def mentor_system_prompt(
     recent_str = ", ".join(recent_skills) if recent_skills else "none yet"
 
     return f"""You are a warm, knowledgeable mentor guiding a learner through their
-personal roadmap on Stride, an AI-powered goal-execution app.
+personal roadmap on Hazo, an AI-powered goal-execution app.
 
 ── CONTEXT (do NOT repeat this verbatim to the user) ───────
 

@@ -1,5 +1,5 @@
 """
-nightly_scheduler.py — Nightly task scheduler for Stride.
+nightly_scheduler.py — Nightly task scheduler for Hazo.
 
 Runs every hour via APScheduler.  When triggered, finds all users whose
 local time is between 22:00 and 22:59 and generates the next day's
@@ -37,7 +37,7 @@ from db.models import UserDB, GoalDB, WeeklyAvailability
 from packages.ai.gemini_client import call_gemini_json
 from packages.ai.prompts import anti_procrastination_prompt, replan_prompt
 
-logger = logging.getLogger("stride.jobs.nightly")
+logger = logging.getLogger("hazo.jobs.nightly")
 
 # ---------------------------------------------------------------------------
 # Redis
@@ -276,7 +276,7 @@ async def schedule_task_for_tomorrow(
             )
             msg = notif.get("message", "")
             if msg:
-                await send_push(push_token, "Stride", msg, {"screen": "home"})
+                await send_push(push_token, "Hazo", msg, {"screen": "home"})
         except Exception as exc:
             logger.warning("Anti-procrastination nudge failed: %s", exc)
 

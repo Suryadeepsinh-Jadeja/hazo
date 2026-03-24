@@ -1,9 +1,9 @@
 """
-seed_demo.py — Seed a complete demo user for Stride.
+seed_demo.py — Seed a complete demo user for Hazo.
 
 Usage:
     cd apps/api
-    python -m scripts.seed_demo --email demo@stride.app --password Demo1234!
+    python -m scripts.seed_demo --email demo@hazo.app --password Demo1234!
 
 Creates:
   - Supabase auth user
@@ -33,7 +33,7 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip('"')
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
-logger = logging.getLogger("stride.seed_demo")
+logger = logging.getLogger("hazo.seed_demo")
 logging.basicConfig(level=logging.INFO)
 
 NOW = datetime.utcnow()
@@ -405,7 +405,7 @@ async def seed(email: str, password: str) -> None:
 
     # MongoDB
     client = AsyncIOMotorClient(MONGODB_URI)
-    db = client.stride
+    db = client.hazo
 
     # Clean existing demo data for this user
     existing_user = await db.users.find_one({"supabase_id": supabase_id})
@@ -458,8 +458,8 @@ async def seed(email: str, password: str) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Seed demo data for Stride")
-    parser.add_argument("--email", default="demo@stride.app")
+    parser = argparse.ArgumentParser(description="Seed demo data for Hazo")
+    parser.add_argument("--email", default="demo@hazo.app")
     parser.add_argument("--password", default="Demo1234!")
     args = parser.parse_args()
     asyncio.run(seed(args.email, args.password))

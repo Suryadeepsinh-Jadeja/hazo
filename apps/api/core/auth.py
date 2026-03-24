@@ -1,5 +1,9 @@
+import asyncio
+import logging
 import os
+import time
 from datetime import datetime
+from typing import Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
@@ -12,28 +16,94 @@ from db.models import UserDB
 _API_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
 load_dotenv(_API_ENV_PATH)
 
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
-ALGORITHM = "HS256"
+SUPABASE_JWKS_URL = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json" if SUPABASE_URL else ""
+JWKS_CACHE_TTL_SECONDS = 600
+SUPPORTED_SIGNING_ALGORITHMS = {"RS256", "ES256"}
+
+logger = logging.getLogger("hazo.core.auth")
 
 security = HTTPBearer()
 optional_security = HTTPBearer(auto_error=False)
 
+_jwks_cache: dict[str, Any] | None = None
+_jwks_cache_expires_at = 0.0
+_jwks_lock = asyncio.Lock()
+
+
+async def _fetch_jwks(force_refresh: bool = False) -> dict[str, Any]:
+    global _jwks_cache, _jwks_cache_expires_at
+
+    now = time.time()
+    if (
+        not force_refresh
+        and _jwks_cache is not None
+        and now < _jwks_cache_expires_at
+    ):
+        return _jwks_cache
+
+    if not SUPABASE_JWKS_URL:
+        raise RuntimeError("SUPABASE_URL is not configured.")
+
+    async with _jwks_lock:
+        now = time.time()
+        if (
+            not force_refresh
+            and _jwks_cache is not None
+            and now < _jwks_cache_expires_at
+        ):
+            return _jwks_cache
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(SUPABASE_JWKS_URL)
+            response.raise_for_status()
+
+        jwks = response.json()
+        if not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list):
+            raise RuntimeError("Supabase JWKS response did not contain a valid key set.")
+
+        _jwks_cache = jwks
+        _jwks_cache_expires_at = now + JWKS_CACHE_TTL_SECONDS
+        return jwks
+
+
+async def _verify_token_with_jwks(token: str) -> dict[str, Any]:
+    if not SUPABASE_URL:
+        raise RuntimeError("SUPABASE_URL is not configured.")
+
+    header = jwt.get_unverified_header(token)
+    kid = header.get("kid")
+    alg = header.get("alg")
+    if not kid:
+        raise JWTError("JWT header did not include a key id (kid).")
+    if alg not in SUPPORTED_SIGNING_ALGORITHMS:
+        raise JWTError(f"Unsupported JWT signing algorithm: {alg}")
+
+    async def _find_key(force_refresh: bool = False) -> dict[str, Any] | None:
+        jwks = await _fetch_jwks(force_refresh=force_refresh)
+        return next((key for key in jwks["keys"] if key.get("kid") == kid), None)
+
+    key = await _find_key(force_refresh=False)
+    if key is None:
+        key = await _find_key(force_refresh=True)
+    if key is None:
+        raise JWTError(f"No JWKS signing key matched kid={kid!r}")
+
+    return jwt.decode(
+        token,
+        key,
+        algorithms=[alg],
+        audience="authenticated",
+        issuer=f"{SUPABASE_URL}/auth/v1",
+    )
+
+
 async def verify_token(token: str) -> dict:
-    if SUPABASE_JWT_SECRET:
-        try:
-            # Supabase uses 'authenticated' as the audience for valid access tokens
-            payload = jwt.decode(
-                token,
-                SUPABASE_JWT_SECRET,
-                algorithms=[ALGORITHM],
-                audience="authenticated"
-            )
-            return payload
-        except JWTError:
-            # Fall through to Supabase /auth/v1/user verification.
-            pass
+    try:
+        return await _verify_token_with_jwks(token)
+    except Exception as exc:
+        logger.warning("JWKS verification failed, falling back to Supabase /user lookup: %s", exc)
 
     if SUPABASE_URL and SUPABASE_SERVICE_KEY:
         try:

@@ -1,5 +1,5 @@
 """
-community.py — Community rooms router for Stride.
+community.py — Community rooms router for Hazo.
 
 Endpoints:
   GET    /community/rooms              — list / search public rooms
@@ -34,7 +34,7 @@ from db.database import get_goals_col, get_rooms_col, get_users_col, get_databas
 from db.models import CommunityRoomDB, UserDB
 from packages.ai.gemini_client import call_gemini_json
 
-logger = logging.getLogger("stride.routers.community")
+logger = logging.getLogger("hazo.routers.community")
 
 router = APIRouter(prefix="/community", tags=["community"])
 
@@ -91,7 +91,7 @@ class PostBody(BaseModel):
 # Toxicity check prompt (inline — no toxicity prompt exists in prompts.py)
 # ---------------------------------------------------------------------------
 
-_TOXICITY_PROMPT = """You are a community moderator for an educational goal-tracking app called Stride.
+_TOXICITY_PROMPT = """You are a community moderator for an educational goal-tracking app called Hazo.
 Review the post below and decide if it is appropriate.
 
 A post is INAPPROPRIATE if it contains:

@@ -51,7 +51,7 @@ const TypingDot = ({ delay }: { delay: number }) => {
 
 const TypingIndicator = () => (
   <View style={styles.typingContainer}>
-    <Text style={styles.strideRole}>STRIDE</Text>
+    <Text style={styles.hazoRole}>HAZO</Text>
     <View style={styles.dotsRow}>
       <TypingDot delay={0} />
       <TypingDot delay={150} />
@@ -383,7 +383,7 @@ export const MentorScreen = () => {
       ]}>
         {/* Draw AI Header if new speaking turn */}
         {!isUser && !isSameSpeaker && (
-           <Text style={styles.strideRole}>STRIDE</Text>
+           <Text style={styles.hazoRole}>HAZO</Text>
         )}
         
         <View style={[styles.messageBubble, isUser ? styles.bubbleUser : styles.bubbleAi]}>
@@ -427,12 +427,12 @@ export const MentorScreen = () => {
       {/* Core Chat Scroll/List */}
       {isLoadingHistory ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.strideRoleEmpty}>STRIDE</Text>
+          <Text style={styles.hazoRoleEmpty}>HAZO</Text>
           <Text style={styles.welcomeAiText}>Loading your previous mentor chat...</Text>
         </View>
       ) : messages.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.strideRoleEmpty}>STRIDE</Text>
+          <Text style={styles.hazoRoleEmpty}>HAZO</Text>
           <Text style={styles.welcomeAiText}>Hello {session?.user?.user_metadata?.name || 'there'}. I'm your AI Mentor. Let me know what you'd like to work on today, or ask me a question.</Text>
           {historyLoadError && <Text style={styles.historyErrorText}>{historyLoadError}</Text>}
           
@@ -544,7 +544,7 @@ const styles = StyleSheet.create({
     padding: theme.spacing[24],
     justifyContent: 'center',
   },
-  strideRoleEmpty: {
+  hazoRoleEmpty: {
     fontFamily: theme.typography.fontMono,
     fontSize: 9,
     color: theme.colors.accent.coral,
@@ -588,7 +588,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing[24],
     paddingVertical: theme.spacing[24],
   },
-  strideRole: {
+  hazoRole: {
     fontFamily: theme.typography.fontMono,
     fontSize: 9,
     color: theme.colors.accent.coral,

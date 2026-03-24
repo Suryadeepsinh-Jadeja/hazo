@@ -131,7 +131,7 @@ export const ProfileScreen = () => {
           <Text style={styles.avatarText}>{initials}</Text>
         </View>
         <View style={styles.userInfo}>
-          <Text style={styles.userName}>{user?.name || 'Stride User'}</Text>
+          <Text style={styles.userName}>{user?.name || 'Hazo User'}</Text>
           <Text style={styles.userEmail}>{user?.email}</Text>
           <View style={[styles.planBadge, profile?.plan === 'pro' && styles.planBadgePro]}>
             <Text style={styles.planText}>{profile?.plan?.toUpperCase() || 'FREE'}</Text>
@@ -259,7 +259,7 @@ export const ProfileScreen = () => {
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.versionText}>Stride v{APP_VERSION}</Text>
+      <Text style={styles.versionText}>Hazo v{APP_VERSION}</Text>
 
       {/* Availability Modal */}
       <Modal visible={availModalVisible} transparent animationType="fade">

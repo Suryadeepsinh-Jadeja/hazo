@@ -3,7 +3,7 @@ reset_demo.py — Delete all data for the demo user and re-seed.
 
 Usage:
     cd apps/api
-    python -m scripts.reset_demo --email demo@stride.app --password Demo1234!
+    python -m scripts.reset_demo --email demo@hazo.app --password Demo1234!
 
 Deletes:
   - MongoDB: UserDB, GoalDB, SkillDB, TaskDB, MentorSessions for this user
@@ -26,14 +26,14 @@ load_dotenv()
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
-logger = logging.getLogger("stride.reset_demo")
+logger = logging.getLogger("hazo.reset_demo")
 logging.basicConfig(level=logging.INFO)
 
 
 async def delete_demo_data(email: str) -> None:
     """Remove all MongoDB and Redis data for the demo user."""
     client = AsyncIOMotorClient(MONGODB_URI)
-    db = client.stride
+    db = client.hazo
 
     user_doc = await db.users.find_one({"email": email})
     if not user_doc:
@@ -89,8 +89,8 @@ async def reset(email: str, password: str) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Reset and re-seed demo data for Stride")
-    parser.add_argument("--email", default="demo@stride.app")
+    parser = argparse.ArgumentParser(description="Reset and re-seed demo data for Hazo")
+    parser.add_argument("--email", default="demo@hazo.app")
     parser.add_argument("--password", default="Demo1234!")
     args = parser.parse_args()
     asyncio.run(reset(args.email, args.password))

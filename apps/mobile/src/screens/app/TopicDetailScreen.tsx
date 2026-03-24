@@ -278,7 +278,7 @@ export const TopicDetailScreen = () => {
               <Text style={styles.emptyBody}>
                 {hasPreparedResources
                   ? 'Try refreshing to fetch better explainers, or jump into the practice links below.'
-                  : 'You can prepare resources now, or use the search prompts below while Stride catches up.'}
+                  : 'You can prepare resources now, or use the search prompts below while Hazo catches up.'}
               </Text>
             </View>
           )}

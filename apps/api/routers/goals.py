@@ -1,5 +1,5 @@
 """
-goals.py — all goal and roadmap endpoints for Stride.
+goals.py — all goal and roadmap endpoints for Hazo.
 
 Endpoints:
   POST   /onboard/start
@@ -59,7 +59,7 @@ from packages.ai.prompts import (
 )
 
 load_dotenv()
-logger = logging.getLogger("stride.routers.goals")
+logger = logging.getLogger("hazo.routers.goals")
 router = APIRouter(prefix="/goals")
 
 # ---------------------------------------------------------------------------

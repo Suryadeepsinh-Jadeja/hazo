@@ -79,7 +79,7 @@ export const GoalsScreen = () => {
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyTitle}>What do you want to achieve?</Text>
-      <Text style={styles.emptySubtitle}>Stride works backwards from your big goal to construct daily habits.</Text>
+      <Text style={styles.emptySubtitle}>Hazo works backwards from your big goal to construct daily habits.</Text>
       <TouchableOpacity style={styles.addButtonBig} onPress={handleAddGoal}>
         <Text style={styles.addButtonBigText}>Add my first goal →</Text>
       </TouchableOpacity>

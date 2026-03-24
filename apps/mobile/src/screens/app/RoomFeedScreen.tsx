@@ -50,7 +50,7 @@ export const RoomFeedScreen = () => {
 
   const handlePost = () => {
     if (user?.plan !== 'pro') {
-      Alert.alert('Pro Required', 'Posting to Community Channels is a Stride Pro feature.');
+      Alert.alert('Pro Required', 'Posting to Community Channels is a Hazo Pro feature.');
       return;
     }
     if (!inputText.trim()) return;

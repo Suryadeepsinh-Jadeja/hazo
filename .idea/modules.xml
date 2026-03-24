@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/Stride.iml" filepath="$PROJECT_DIR$/.idea/Stride.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/Hazo.iml" filepath="$PROJECT_DIR$/.idea/Hazo.iml" />
     </modules>
   </component>
 </project>

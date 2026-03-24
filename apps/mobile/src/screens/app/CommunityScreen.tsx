@@ -37,7 +37,7 @@ export const CommunityScreen = () => {
     if (user?.plan !== 'pro') {
       Alert.alert(
         "Pro Feature", 
-        "Creating custom community cohorts requires Stride Pro.",
+        "Creating custom community cohorts requires Hazo Pro.",
         [
           { text: "Cancel", style: "cancel" },
           { text: "Upgrade", style: "default" }

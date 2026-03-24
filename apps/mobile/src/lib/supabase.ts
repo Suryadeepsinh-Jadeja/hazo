@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = Config.SUPABASE_URL || Config.PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey =
   Config.SUPABASE_ANON_KEY || Config.PUBLIC_SUPABASE_ANON_KEY || '';
-const appRedirectUrl = 'stride://auth';
+const appRedirectUrl = 'hazo://auth';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {

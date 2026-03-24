@@ -1,5 +1,5 @@
 """
-tasks.py — task management endpoints for Stride.
+tasks.py — task management endpoints for Hazo.
 
 Endpoints:
   POST   /                              create task
@@ -26,7 +26,7 @@ from db.database import get_tasks_col, get_skills_col
 from db.models import UserDB
 
 load_dotenv()
-logger = logging.getLogger("stride.routers.tasks")
+logger = logging.getLogger("hazo.routers.tasks")
 router = APIRouter(prefix="/tasks")
 
 
