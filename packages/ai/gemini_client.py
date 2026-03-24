@@ -2,8 +2,8 @@
 Shared LLM client for the Hazo application.
 
 The module keeps the existing ``call_gemini`` / ``stream_gemini`` function
-names for backward compatibility, but the implementation is now provider-based
-and can route requests to either Gemini or OpenRouter via environment config.
+names for backward compatibility, but the implementation uses only the provider
+selected by ``LLM_PROVIDER``. There is no cross-provider fallback.
 """
 
 import asyncio
@@ -151,6 +151,17 @@ def _entry_to_text(entry: dict) -> str:
         return str(parts)
 
     return ""
+
+
+def _current_provider() -> str:
+    if LLM_PROVIDER == "gemini":
+        return "gemini"
+    if LLM_PROVIDER == "openrouter":
+        return "openrouter"
+
+    raise RuntimeError(
+        f"Unsupported LLM_PROVIDER={LLM_PROVIDER!r}. Expected 'gemini' or 'openrouter'."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -339,25 +350,29 @@ async def call_gemini(
     temperature: float = 0.3,
     max_tokens: int = 8192,
 ) -> str:
-    """Send *prompt* to the configured provider and return the text response."""
+    """Send *prompt* to the selected provider and return the text response."""
+    provider = _current_provider()
     for attempt in range(1, _MAX_RETRIES + 1):
         try:
-            if LLM_PROVIDER == "gemini":
+            if provider == "gemini":
                 return await _call_gemini_provider(
                     prompt=prompt,
                     temperature=temperature,
                     max_tokens=max_tokens,
                 )
-            return await _call_openrouter_provider(
-                prompt=prompt,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            if provider == "openrouter":
+                return await _call_openrouter_provider(
+                    prompt=prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+
+            raise RuntimeError(f"Unsupported provider dispatch: {provider}")
         except Exception as exc:
             if _is_rate_limited(exc):
                 if attempt == _MAX_RETRIES:
                     raise RuntimeError(
-                        f"{LLM_PROVIDER} API rate-limited after {_MAX_RETRIES} retries: {exc}"
+                        f"{provider} API rate-limited after {_MAX_RETRIES} retries: {exc}"
                     ) from exc
 
                 wait = _BASE_BACKOFF_SECONDS ** attempt
@@ -365,14 +380,14 @@ async def call_gemini(
                     "Rate limited on attempt %d/%d for provider %s — retrying in %.1f s",
                     attempt,
                     _MAX_RETRIES,
-                    LLM_PROVIDER,
+                    provider,
                     wait,
                 )
                 await asyncio.sleep(wait)
                 continue
 
             raise RuntimeError(
-                f"{LLM_PROVIDER} API call failed (attempt {attempt}): {exc}"
+                f"{provider} API call failed (attempt {attempt}): {exc}"
             ) from exc
 
     raise RuntimeError("call_gemini exhausted all retries unexpectedly")
@@ -382,7 +397,8 @@ async def call_gemini_json(
     prompt: str,
     temperature: float = 0.1,
 ) -> dict:
-    """Call the configured provider and parse the response as JSON."""
+    """Call the selected provider and parse the response as JSON."""
+    provider = _current_provider()
     raw = await call_gemini(prompt, temperature=temperature)
     text = _extract_json_text(raw)
 
@@ -391,11 +407,11 @@ async def call_gemini_json(
     except json.JSONDecodeError as exc:
         logger.error(
             "Failed to parse %s response as JSON.\n--- RAW TEXT ---\n%s\n--- END ---",
-            LLM_PROVIDER,
+            provider,
             raw,
         )
         raise ValueError(
-            f"{LLM_PROVIDER} returned invalid JSON: {exc}. "
+            f"{provider} returned invalid JSON: {exc}. "
             "See logs for the raw response text."
         ) from exc
 
@@ -406,8 +422,9 @@ async def stream_gemini(
     history: list[dict],
     temperature: float = 0.7,
 ) -> AsyncGenerator[str, None]:
-    """Stream text chunks from the configured provider chat session."""
-    if LLM_PROVIDER == "gemini":
+    """Stream text chunks from the selected provider chat session."""
+    provider = _current_provider()
+    if provider == "gemini":
         async for chunk in _stream_gemini_provider(
             prompt=prompt,
             system=system,
@@ -417,10 +434,14 @@ async def stream_gemini(
             yield chunk
         return
 
-    async for chunk in _stream_openrouter_provider(
-        prompt=prompt,
-        system=system,
-        history=history,
-        temperature=temperature,
-    ):
-        yield chunk
+    if provider == "openrouter":
+        async for chunk in _stream_openrouter_provider(
+            prompt=prompt,
+            system=system,
+            history=history,
+            temperature=temperature,
+        ):
+            yield chunk
+        return
+
+    raise RuntimeError(f"Unsupported provider dispatch: {provider}")
