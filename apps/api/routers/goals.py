@@ -678,6 +678,9 @@ async def _verify_and_split_resources(
     prefers_coding_practice = _topic_prefers_coding_practice(domain, topic_title)
 
     for resource in resources_raw:
+        if not isinstance(resource, dict):
+            continue
+
         url = _normalise_url(resource.get("url", ""))
         if not url or url in seen_urls:
             continue

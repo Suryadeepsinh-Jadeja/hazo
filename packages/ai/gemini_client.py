@@ -99,6 +99,72 @@ def _extract_json_text(raw: str) -> str:
     return match.group(1).strip() if match else raw.strip()
 
 
+def _close_unbalanced_json(text: str) -> str:
+    stack: list[str] = []
+    in_string = False
+    escape = False
+
+    for char in text:
+        if in_string:
+            if escape:
+                escape = False
+                continue
+            if char == "\\":
+                escape = True
+                continue
+            if char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char in "[{":
+            stack.append(char)
+        elif char == "]" and stack and stack[-1] == "[":
+            stack.pop()
+        elif char == "}" and stack and stack[-1] == "{":
+            stack.pop()
+
+    closers = "".join("]" if opener == "[" else "}" for opener in reversed(stack))
+    return text + closers
+
+
+def _salvage_json_text(text: str) -> str | None:
+    stripped = text.strip()
+    if not stripped:
+        return None
+
+    start_indexes = [idx for idx in (stripped.find("["), stripped.find("{")) if idx != -1]
+    if not start_indexes:
+        return None
+
+    candidate_source = stripped[min(start_indexes):].strip()
+    if not candidate_source:
+        return None
+
+    closing_positions = [
+        idx for idx, char in enumerate(candidate_source) if char in "}]"
+    ]
+
+    for end_idx in reversed(closing_positions):
+        candidate = candidate_source[: end_idx + 1].rstrip()
+        candidate = re.sub(r",\s*$", "", candidate)
+        candidate = _close_unbalanced_json(candidate)
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            continue
+
+    fallback = re.sub(r",\s*$", "", candidate_source.rstrip())
+    fallback = _close_unbalanced_json(fallback)
+    try:
+        json.loads(fallback)
+        return fallback
+    except json.JSONDecodeError:
+        return None
+
+
 def _is_rate_limited(exc: Exception) -> bool:
     if isinstance(exc, ResourceExhausted):
         return True
@@ -396,7 +462,7 @@ async def call_gemini(
 async def call_gemini_json(
     prompt: str,
     temperature: float = 0.1,
-) -> dict:
+) -> Any:
     """Call the selected provider and parse the response as JSON."""
     provider = _current_provider()
     raw = await call_gemini(prompt, temperature=temperature)
@@ -405,6 +471,18 @@ async def call_gemini_json(
     try:
         return json.loads(text)
     except json.JSONDecodeError as exc:
+        salvaged_text = _salvage_json_text(text)
+        if salvaged_text is not None:
+            try:
+                parsed = json.loads(salvaged_text)
+                logger.warning(
+                    "Recovered malformed %s JSON response by salvaging the valid prefix.",
+                    provider,
+                )
+                return parsed
+            except json.JSONDecodeError:
+                pass
+
         logger.error(
             "Failed to parse %s response as JSON.\n--- RAW TEXT ---\n%s\n--- END ---",
             provider,

@@ -622,15 +622,9 @@ export const TodayScreen = () => {
                       <Text style={[styles.deckGoalTitle, { color: visualTheme.onAccent }]} numberOfLines={2}>
                         {taskCard.goal_title || goal.title}
                       </Text>
-                      <Text style={[styles.deckTaskTitle, { color: visualTheme.onAccent }]} numberOfLines={3}>
+                      <Text style={[styles.deckTaskTitle, { color: visualTheme.onAccent }]} numberOfLines={2}>
                         {primaryTopic.title}
                       </Text>
-
-                      {primaryTopic.ai_note ? (
-                        <Text style={[styles.deckNote, { color: `${visualTheme.onAccent}D9` }]} numberOfLines={3}>
-                          {primaryTopic.ai_note}
-                        </Text>
-                      ) : null}
 
                       <View style={styles.deckActionRow}>
                         <TouchableOpacity
@@ -878,13 +872,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
   },
   deckGradient: {
-    minHeight: 420,
-    padding: theme.spacing[24],
+    minHeight: 348,
+    padding: theme.spacing[20],
     justifyContent: 'space-between',
   },
   deckCardFallback: {
-    minHeight: 260,
-    padding: theme.spacing[24],
+    minHeight: 220,
+    padding: theme.spacing[20],
     borderWidth: 1,
     justifyContent: 'space-between',
   },
@@ -906,7 +900,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing[20],
+    marginBottom: theme.spacing[16],
   },
   deckPill: {
     flexDirection: 'row',
@@ -934,21 +928,14 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.fontBody,
     fontSize: theme.typography.fontSizes.sm,
     fontWeight: theme.typography.fontWeights.semibold,
-    marginBottom: theme.spacing[12],
+    marginBottom: theme.spacing[8],
   },
   deckTaskTitle: {
     fontFamily: theme.typography.fontDisplay,
-    fontSize: 34,
-    lineHeight: 40,
+    fontSize: 28,
+    lineHeight: 32,
     fontWeight: theme.typography.fontWeights.bold,
-    marginBottom: theme.spacing[16],
-  },
-  deckNote: {
-    fontFamily: theme.typography.fontBody,
-    fontSize: theme.typography.fontSizes.base,
-    lineHeight: 24,
-    fontStyle: 'italic',
-    marginBottom: theme.spacing[20],
+    marginBottom: theme.spacing[10],
   },
   deckActionRow: {
     flexDirection: 'row',
@@ -958,7 +945,7 @@ const styles = StyleSheet.create({
   },
   deckCompleteButton: {
     flex: 1,
-    minHeight: 54,
+    minHeight: 50,
     borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
@@ -974,9 +961,9 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.fontWeights.bold,
   },
   deckSecondaryButton: {
-    minHeight: 54,
-    minWidth: 108,
-    paddingHorizontal: 18,
+    minHeight: 50,
+    minWidth: 100,
+    paddingHorizontal: 16,
     borderRadius: 20,
     borderWidth: 1,
     flexDirection: 'row',
@@ -990,10 +977,10 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.fontWeights.semibold,
   },
   deckFooterRow: {
-    marginTop: 14,
+    marginTop: 10,
   },
   deckMiniLink: {
-    minHeight: 44,
+    minHeight: 40,
     borderRadius: 18,
     flexDirection: 'row',
     alignItems: 'center',

@@ -16,6 +16,7 @@ import api from '../../lib/api';
 import { ResourceCard } from '../../components/ResourceCard';
 import { theme } from '../../constants/theme';
 import { getGoalVisualTheme } from '../../lib/goalVisuals';
+import { toast } from '../../lib/toast';
 import { useGoalStore } from '../../store/goalStore';
 
 interface TopicResource {
@@ -40,6 +41,14 @@ interface TopicDetail {
   completed_at?: string;
 }
 
+interface LoadedTopicResult {
+  goalTitle: string;
+  phaseTitle: string;
+  topic: TopicDetail | null;
+}
+
+const PREPARE_REQUEST_TIMEOUT_MS = 3 * 60 * 1000;
+
 export const TopicDetailScreen = () => {
   const navigation = useNavigation<any>();
   const queryClient = useQueryClient();
@@ -52,6 +61,7 @@ export const TopicDetailScreen = () => {
   const [topic, setTopic] = useState<TopicDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [preparing, setPreparing] = useState(false);
+  const [prepareMode, setPrepareMode] = useState<'prepare' | 'refresh' | null>(null);
   const visualTheme = (goalId ? goalThemes[goalId] : undefined) || getGoalVisualTheme(goalId || goalTitle);
 
   const completeTopicMutation = useMutation({
@@ -73,6 +83,42 @@ export const TopicDetailScreen = () => {
     },
   });
 
+  const applyLoadedTopic = (loadedTopic: LoadedTopicResult | null) => {
+    if (!loadedTopic) {
+      return;
+    }
+
+    setGoalTitle(loadedTopic.goalTitle);
+    setPhaseTitle(loadedTopic.phaseTitle);
+    setTopic(loadedTopic.topic);
+  };
+
+  const fetchTopicDetails = async (): Promise<LoadedTopicResult | null> => {
+    if (!goalId || !topicId) {
+      return null;
+    }
+
+    const response = await api.get(`/api/v1/goals/${goalId}`);
+    const goal = response.data;
+
+    let matchedTopic: TopicDetail | null = null;
+    let matchedPhaseTitle = '';
+    for (const phase of goal.phases || []) {
+      const candidate = phase.topics?.find((item: TopicDetail) => item.topic_id === topicId);
+      if (candidate) {
+        matchedTopic = candidate;
+        matchedPhaseTitle = phase.title || '';
+        break;
+      }
+    }
+
+    return {
+      goalTitle: goal.title || '',
+      phaseTitle: matchedPhaseTitle,
+      topic: matchedTopic,
+    };
+  };
+
   const loadTopic = async () => {
     if (!goalId || !topicId) {
       setLoading(false);
@@ -80,23 +126,8 @@ export const TopicDetailScreen = () => {
     }
 
     try {
-      const response = await api.get(`/api/v1/goals/${goalId}`);
-      const goal = response.data;
-      setGoalTitle(goal.title || '');
-
-      let matchedTopic: TopicDetail | null = null;
-      let matchedPhaseTitle = '';
-      for (const phase of goal.phases || []) {
-        const candidate = phase.topics?.find((item: TopicDetail) => item.topic_id === topicId);
-        if (candidate) {
-          matchedTopic = candidate;
-          matchedPhaseTitle = phase.title || '';
-          break;
-        }
-      }
-
-      setTopic(matchedTopic);
-      setPhaseTitle(matchedPhaseTitle);
+      const loadedTopic = await fetchTopicDetails();
+      applyLoadedTopic(loadedTopic);
     } catch (error) {
       console.warn('Failed to load topic details:', error);
     } finally {
@@ -113,24 +144,34 @@ export const TopicDetailScreen = () => {
       return;
     }
 
+    const hasAnyExistingLinks =
+      Boolean((topic?.resources?.length || 0) + (topic?.practice_links?.length || 0));
+
     setPreparing(true);
+    setPrepareMode(hasAnyExistingLinks ? 'refresh' : 'prepare');
     try {
       const response = await api.post(
         `/api/v1/goals/${goalId}/topics/${topicId}/prepare`,
         null,
         {
+          timeout: PREPARE_REQUEST_TIMEOUT_MS,
           params: {
-            force: hasPreparedResources,
+            force: hasAnyExistingLinks,
           },
         }
       );
       setTopic(response.data.topic);
       setPhaseTitle(response.data.phase_title || phaseTitle);
       setGoalTitle(response.data.goal_title || goalTitle);
-    } catch (error) {
-      console.warn('Failed to prepare topic resources:', error);
+    } catch (error: any) {
+      const detail =
+        error?.response?.data?.detail ||
+        error?.message ||
+        'Could not prepare topic resources right now.';
+      toast.show(`Could not prepare links: ${detail}`, 'error');
     } finally {
       setPreparing(false);
+      setPrepareMode(null);
     }
   };
 
@@ -250,10 +291,16 @@ export const TopicDetailScreen = () => {
               onPress={handlePrepareNow}
               disabled={preparing}
             >
-              <Sparkles color={theme.colors.neutral.white} size={14} />
+              {preparing ? (
+                <ActivityIndicator size="small" color={theme.colors.neutral.white} />
+              ) : (
+                <Sparkles color={theme.colors.neutral.white} size={14} />
+              )}
               <Text style={styles.prepareButtonText}>
                 {preparing
-                  ? 'Refreshing...'
+                  ? prepareMode === 'refresh'
+                    ? 'Refreshing...'
+                    : 'Preparing...'
                   : hasPreparedResources
                     ? 'Refresh Links'
                     : 'Prepare Now'}
