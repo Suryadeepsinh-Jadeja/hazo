@@ -23,7 +23,7 @@ import os
 import re
 import sys
 import uuid
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
@@ -453,7 +453,7 @@ def _compute_streak(
         # First completion ever
         streak = 1
     else:
-        last_date = last_active_date.date() if isinstance(last_active_date, datetime) else last_active_date
+        last_date = _date_for_user(current_user, last_active_date)
         diff = (today - last_date).days
         if diff == 0:
             pass  # already updated today, no change
@@ -474,24 +474,64 @@ def _today_for_user(current_user: UserDB) -> date:
         return datetime.utcnow().date()
 
 
+def _date_for_user(current_user: UserDB, value: datetime | date) -> date:
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+
+    timezone_name = getattr(current_user, "timezone", None) or "UTC"
+    try:
+        tz = ZoneInfo(timezone_name)
+        dt_value = value
+        if dt_value.tzinfo is None:
+            dt_value = dt_value.replace(tzinfo=timezone.utc)
+        return dt_value.astimezone(tz).date()
+    except Exception:
+        return value.date() if isinstance(value, datetime) else value
+
+
 def _resolve_last_streak_date(current_user: UserDB) -> Optional[datetime]:
     last_streak_date = getattr(current_user, "last_streak_date", None)
     if last_streak_date is not None:
         return last_streak_date
 
-    legacy_last_active = current_user.last_active_date
-    if legacy_last_active is None:
-        return None
+    return current_user.last_active_date
 
-    legacy_last_date = (
-        legacy_last_active.date()
-        if isinstance(legacy_last_active, datetime)
-        else legacy_last_active
+
+async def _prepare_next_topic_resources(
+    goal_oid: ObjectId,
+    next_topic_id: str,
+) -> None:
+    goals_col = get_goals_col()
+    goal_doc = await goals_col.find_one({"_id": goal_oid})
+    if goal_doc is None:
+        return
+
+    next_topic_ref: Optional[dict] = None
+    for phase in goal_doc.get("phases", []):
+        for topic in phase.get("topics", []):
+            if topic.get("topic_id") == next_topic_id:
+                next_topic_ref = topic
+                break
+        if next_topic_ref:
+            break
+
+    if next_topic_ref is None or next_topic_ref.get("resources"):
+        return
+
+    topic_context = _build_topic_context(goal_doc, next_topic_id)
+    generated_payload = await _curate_resources_for_topic(
+        next_topic_ref.get("title", ""),
+        goal_doc.get("domain", "other"),
+        goal_doc.get("intake", {}).get("budget", "free"),
+        **topic_context,
     )
-    if legacy_last_date < _today_for_user(current_user):
-        return legacy_last_active
-
-    return None
+    if generated_payload["resources"] or generated_payload["practice_links"]:
+        next_topic_ref["resources"] = generated_payload["resources"]
+        next_topic_ref["practice_links"] = generated_payload["practice_links"]
+        await goals_col.update_one(
+            {"_id": goal_oid},
+            {"$set": {"phases": goal_doc["phases"], "updated_at": datetime.utcnow()}},
+        )
 
 
 async def _curate_resources_for_topic(
@@ -1544,6 +1584,7 @@ async def get_today_task(
 async def complete_topic(
     goal_id: str,
     topic_id: str,
+    background_tasks: BackgroundTasks,
     current_user: UserDB = Depends(get_current_user),
 ):
     """
@@ -1679,20 +1720,11 @@ async def complete_topic(
     # Prepare the next topic's links immediately so the user can inspect it
     # without waiting for the nightly resource hydration job.
     if next_topic_ref is not None and not next_topic_ref.get("resources"):
-        topic_context = _build_topic_context(goal_doc, next_topic_ref.get("topic_id", ""))
-        generated_payload = await _curate_resources_for_topic(
-            next_topic_ref.get("title", ""),
-            goal_doc.get("domain", "other"),
-            goal_doc.get("intake", {}).get("budget", "free"),
-            **topic_context,
+        background_tasks.add_task(
+            _prepare_next_topic_resources,
+            oid,
+            next_topic_ref.get("topic_id", ""),
         )
-        if generated_payload["resources"] or generated_payload["practice_links"]:
-            next_topic_ref["resources"] = generated_payload["resources"]
-            next_topic_ref["practice_links"] = generated_payload["practice_links"]
-            await goals_col.update_one(
-                {"_id": oid},
-                {"$set": {"phases": goal_doc["phases"], "updated_at": datetime.utcnow()}},
-            )
 
     return TopicCompleteResponse(
         streak_count=streak_data["streak_count"],
