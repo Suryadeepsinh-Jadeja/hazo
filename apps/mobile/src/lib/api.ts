@@ -1,6 +1,7 @@
 import axios, { AxiosResponse } from 'axios';
 import { supabase } from './supabase';
 import Config from 'react-native-config';
+import { WeeklyAvailability } from './availability';
 
 // ─── Axios instance ──────────────────────────────────────────────────────────
 
@@ -166,6 +167,29 @@ export interface RoomProgress {
   top_streaks: { display_name: string; streak_count: number }[];
 }
 
+export interface UserStats {
+  streak_count: number;
+  total_topics_done: number;
+  active_goals_count: number;
+}
+
+export interface UserProfile {
+  _id?: string;
+  supabase_id: string;
+  email?: string | null;
+  name?: string | null;
+  plan?: 'free' | 'pro' | 'team';
+  preferred_reminder_time?: string | null;
+  availability: WeeklyAvailability;
+}
+
+export interface AvailabilityExtractionResult {
+  source_type: 'image' | 'pdf';
+  availability: WeeklyAvailability;
+  summary: string[];
+  warnings: string[];
+}
+
 // ─── Goals API ───────────────────────────────────────────────────────────────
 
 export const goals = {
@@ -194,7 +218,7 @@ export const goals = {
     ): Promise<OnboardCompleteResponse> => {
       const { data } = await api.post('/api/v1/goals/onboard/complete', {
         session_id: sessionId,
-        answers: allAnswers,
+        all_answers: allAnswers,
       });
       return data;
     },
@@ -254,6 +278,45 @@ export const goals = {
 
   resume: async (goalId: string): Promise<{ message: string; status: string }> => {
     const { data } = await api.post(`/api/v1/goals/${goalId}/resume`);
+    return data;
+  },
+};
+
+export const users = {
+  getStats: async (): Promise<UserStats> => {
+    const { data } = await api.get('/api/v1/users/me/stats');
+    return data;
+  },
+
+  getProfile: async (): Promise<UserProfile> => {
+    const { data } = await api.get('/api/v1/auth/me');
+    return data;
+  },
+
+  updateAvailability: async (availability: WeeklyAvailability): Promise<UserProfile> => {
+    const { data } = await api.put('/api/v1/users/me/availability', availability);
+    return data;
+  },
+
+  updatePreferences: async (prefs: Record<string, unknown>): Promise<UserProfile> => {
+    const { data } = await api.put('/api/v1/users/me/preferences', prefs);
+    return data;
+  },
+
+  extractAvailability: async (file: { uri: string; type?: string | null; name?: string | null }): Promise<AvailabilityExtractionResult> => {
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      type: file.type || 'application/octet-stream',
+      name: file.name || 'timetable',
+    } as any);
+
+    const { data } = await api.post('/api/v1/users/me/availability/extract', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 60000,
+    });
     return data;
   },
 };

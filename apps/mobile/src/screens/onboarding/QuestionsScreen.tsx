@@ -112,13 +112,7 @@ export const QuestionsScreen = () => {
   };
 
   const finalizeOnboarding = async () => {
-    try {
-      await api.post('/api/v1/goals/onboard/complete', { session_id: sessionId, all_answers: answerMap });
-    } catch (e) {
-      // Non-fatal: roadmap generation may still work
-      console.warn('Error submitting onboarding answers:', e);
-    }
-    navigation.navigate('Generating', { sessionId });
+    navigation.navigate('AvailabilitySetup', { sessionId, answerMap });
   };
 
   const renderInputArea = () => {

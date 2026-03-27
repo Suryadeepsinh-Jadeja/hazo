@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { GoalInputScreen } from '../screens/onboarding/GoalInputScreen';
 import { QuestionsScreen } from '../screens/onboarding/QuestionsScreen';
+import { AvailabilitySetupScreen } from '../screens/onboarding/AvailabilitySetupScreen';
 import { GeneratingScreen } from '../screens/onboarding/GeneratingScreen';
 import { RoadmapPreviewScreen } from '../screens/onboarding/RoadmapPreviewScreen';
 import { theme } from '../../constants/theme';
@@ -36,6 +37,11 @@ export const OnboardingStack = () => {
         name="Questions" 
         component={QuestionsScreen} 
         options={{ headerTitle: () => <OnboardingHeader progress={0.5} /> }} 
+      />
+      <Stack.Screen
+        name="AvailabilitySetup"
+        component={AvailabilitySetupScreen}
+        options={{ headerTitle: () => <OnboardingHeader progress={0.72} /> }}
       />
       <Stack.Screen 
         name="Generating" 

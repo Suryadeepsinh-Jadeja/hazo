@@ -259,6 +259,16 @@ async def _call_gemini_provider(
     return response.text
 
 
+async def _call_gemini_provider_contents(
+    contents: list[Any],
+    temperature: float,
+    max_tokens: int,
+) -> str:
+    model = _get_gemini_model(temperature=temperature, max_tokens=max_tokens)
+    response = await model.generate_content_async(contents)
+    return response.text
+
+
 async def _stream_gemini_provider(
     prompt: str,
     system: str,
@@ -459,6 +469,53 @@ async def call_gemini(
     raise RuntimeError("call_gemini exhausted all retries unexpectedly")
 
 
+async def call_gemini_multimodal(
+    prompt: str,
+    attachments: list[dict[str, Any]],
+    temperature: float = 0.2,
+    max_tokens: int = 8192,
+) -> str:
+    provider = _current_provider()
+    if provider != "gemini":
+        raise RuntimeError(
+            "Multimodal file extraction is currently supported only with the Gemini provider."
+        )
+
+    contents: list[Any] = [prompt]
+    contents.extend(attachments)
+
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            return await _call_gemini_provider_contents(
+                contents=contents,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        except Exception as exc:
+            if _is_rate_limited(exc):
+                if attempt == _MAX_RETRIES:
+                    raise RuntimeError(
+                        f"{provider} API rate-limited after {_MAX_RETRIES} retries: {exc}"
+                    ) from exc
+
+                wait = _BASE_BACKOFF_SECONDS ** attempt
+                logger.warning(
+                    "Rate limited on multimodal attempt %d/%d for provider %s — retrying in %.1f s",
+                    attempt,
+                    _MAX_RETRIES,
+                    provider,
+                    wait,
+                )
+                await asyncio.sleep(wait)
+                continue
+
+            raise RuntimeError(
+                f"{provider} multimodal API call failed (attempt {attempt}): {exc}"
+            ) from exc
+
+    raise RuntimeError("call_gemini_multimodal exhausted all retries unexpectedly")
+
+
 async def call_gemini_json(
     prompt: str,
     temperature: float = 0.1,
@@ -485,6 +542,45 @@ async def call_gemini_json(
 
         logger.error(
             "Failed to parse %s response as JSON.\n--- RAW TEXT ---\n%s\n--- END ---",
+            provider,
+            raw,
+        )
+        raise ValueError(
+            f"{provider} returned invalid JSON: {exc}. "
+            "See logs for the raw response text."
+        ) from exc
+
+
+async def call_gemini_json_multimodal(
+    prompt: str,
+    attachments: list[dict[str, Any]],
+    temperature: float = 0.1,
+) -> Any:
+    provider = _current_provider()
+    raw = await call_gemini_multimodal(
+        prompt=prompt,
+        attachments=attachments,
+        temperature=temperature,
+    )
+    text = _extract_json_text(raw)
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        salvaged_text = _salvage_json_text(text)
+        if salvaged_text is not None:
+            try:
+                parsed = json.loads(salvaged_text)
+                logger.warning(
+                    "Recovered malformed multimodal %s JSON response by salvaging the valid prefix.",
+                    provider,
+                )
+                return parsed
+            except json.JSONDecodeError:
+                pass
+
+        logger.error(
+            "Failed to parse multimodal %s response as JSON.\n--- RAW TEXT ---\n%s\n--- END ---",
             provider,
             raw,
         )
