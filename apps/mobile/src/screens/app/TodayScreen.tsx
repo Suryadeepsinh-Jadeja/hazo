@@ -8,7 +8,7 @@ import { Flame, CheckCircle2, Clock, BookOpen, Sparkles } from 'lucide-react-nat
 import { Linking } from 'react-native';
 
 import { theme } from '../../constants/theme';
-import api from '../../lib/api';
+import api, { goals as goalApi } from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
 import { useGoalStore } from '../../store/goalStore';
 import { getGoalVisualTheme } from '../../lib/goalVisuals';
@@ -228,15 +228,18 @@ const GoalPattern = memo(({ pattern, color }: { pattern: string; color: string }
 export const TodayScreen = () => {
   const navigation = useNavigation<any>();
   const queryClient = useQueryClient();
-  const { user } = useAuthStore();
+  const user = useAuthStore((state) => state.user);
+  const setUser = useAuthStore((state) => state.setUser);
   const { goalThemes, setGoals } = useGoalStore();
 
   const [confettiActive, setConfettiActive] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
+  const [celebrationStreak, setCelebrationStreak] = useState<number | null>(null);
   const [simplifyTarget, setSimplifyTarget] = useState<{ goalId: string; topicId: string } | null>(null);
   const [completingGoalId, setCompletingGoalId] = useState<string | null>(null);
   const [activeDeckIndex, setActiveDeckIndex] = useState(0);
   const [allowInitialSkeleton, setAllowInitialSkeleton] = useState(true);
+  const currentStreak = user?.streak_count || 0;
 
   useEffect(() => {
     const timer = setTimeout(() => setAllowInitialSkeleton(false), 1800);
@@ -355,15 +358,28 @@ export const TodayScreen = () => {
   // Mutations
   const completeMutation = useMutation({
     mutationFn: async ({ goalId, topicId }: { goalId: string; topicId: string }) => {
-      await api.post(`/api/v1/goals/${goalId}/topics/${topicId}/complete`);
+      return goalApi.complete(goalId, topicId);
     },
     onMutate: ({ goalId }) => {
       setCompletingGoalId(goalId);
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      setCelebrationStreak(result.streak_count);
+      if (user) {
+        setUser({
+          ...user,
+          streak_count: result.streak_count,
+          longest_streak: Math.max(user.longest_streak || 0, result.streak_count),
+          last_streak_date: new Date().toISOString(),
+          last_seen_at: new Date().toISOString(),
+        });
+      }
       setConfettiActive(true);
       setToastVisible(true);
-      setTimeout(() => setToastVisible(false), 3000);
+      setTimeout(() => {
+        setToastVisible(false);
+        setCelebrationStreak(null);
+      }, 3000);
       setTimeout(() => setConfettiActive(false), 3500);
       queryClient.invalidateQueries({ queryKey: ['todayTask'] });
       queryClient.invalidateQueries({ queryKey: ['goals'] });
@@ -452,7 +468,7 @@ export const TodayScreen = () => {
           <Text style={styles.greetingText}>{greeting}, {user?.name?.split(' ')[0] || 'there'}</Text>
           <View style={styles.streakBadge}>
             <Flame color={theme.colors.accent.coralDark} size={14} strokeWidth={2.5} />
-            <Text style={styles.streakText}>{user?.streak_count || 0}</Text>
+            <Text style={styles.streakText}>{currentStreak}</Text>
           </View>
         </View>
 
@@ -750,7 +766,7 @@ export const TodayScreen = () => {
       {/* Toast Overlay */}
       {toastVisible && (
         <Animated.View style={styles.toast}>
-          <Text style={styles.toastText}>🔥 {(user?.streak_count || 0) + 1} day streak!</Text>
+          <Text style={styles.toastText}>🔥 {celebrationStreak || currentStreak} day streak!</Text>
         </Animated.View>
       )}
 

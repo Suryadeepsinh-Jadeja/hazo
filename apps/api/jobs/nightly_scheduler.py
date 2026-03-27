@@ -315,7 +315,7 @@ async def schedule_task_for_tomorrow(
                 logger.warning("Replan failed for user %s goal %s: %s", user_id, goal_id, exc)
 
     # ── Step 6: Streak decay ──────────────────────────────────────────────
-    last_active = user_doc.get("last_active_date")
+    last_active = user_doc.get("last_streak_date") or user_doc.get("last_active_date")
     today = date.today()
     yesterday = today - timedelta(days=1)
 

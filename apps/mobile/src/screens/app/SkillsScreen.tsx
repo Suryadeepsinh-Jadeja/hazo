@@ -15,7 +15,13 @@ interface Skill {
   skill_id: string;
   name: string;
   mastery_level: number;
-  last_practiced: string;
+  stored_mastery_level: number;
+  tasks_completed: number;
+  decay_rate: number;
+  last_practiced?: string | null;
+  days_since_practice?: number;
+  decay_penalty?: number;
+  is_decaying?: boolean;
 }
 
 export const SkillsScreen = () => {
@@ -62,9 +68,29 @@ export const SkillsScreen = () => {
     return "Not Started";
   };
 
-  const checkDecay = (lastPracticed: string) => {
-    const daysSince = Math.floor((new Date().getTime() - new Date(lastPracticed).getTime()) / (1000 * 3600 * 24));
+  const checkDecay = (lastPracticed?: string | null) => {
+    if (!lastPracticed) {
+      return false;
+    }
+    const lastPracticedDate = new Date(lastPracticed);
+    if (Number.isNaN(lastPracticedDate.getTime())) {
+      return false;
+    }
+    const daysSince = Math.floor((new Date().getTime() - lastPracticedDate.getTime()) / (1000 * 3600 * 24));
     return daysSince > 25;
+  };
+
+  const formatLastPracticed = (lastPracticed?: string | null) => {
+    if (!lastPracticed) {
+      return 'Not yet';
+    }
+
+    const lastPracticedDate = new Date(lastPracticed);
+    if (Number.isNaN(lastPracticedDate.getTime())) {
+      return 'Unknown';
+    }
+
+    return lastPracticedDate.toLocaleDateString();
   };
 
   if (isLoading) {
@@ -129,7 +155,7 @@ export const SkillsScreen = () => {
         {/* Skills List */}
         <View style={styles.listSection}>
           {skills?.map((skill) => {
-            const isDecaying = checkDecay(skill.last_practiced);
+            const isDecaying = skill.is_decaying ?? checkDecay(skill.last_practiced);
             const statusColor = getStatusColor(skill.mastery_level);
 
             return (
@@ -155,7 +181,7 @@ export const SkillsScreen = () => {
 
                 <View style={styles.skillFooter}>
                    <Text style={styles.statusLabel}>{getStatusLabel(skill.mastery_level)}</Text>
-                   <Text style={styles.lastPracticed}>Last: {new Date(skill.last_practiced).toLocaleDateString()}</Text>
+                   <Text style={styles.lastPracticed}>Last: {formatLastPracticed(skill.last_practiced)}</Text>
                 </View>
               </View>
             );

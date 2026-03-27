@@ -37,6 +37,8 @@ class UserDB(MongoDocumentModel):
     streak_count: int = 0
     longest_streak: int = 0
     last_active_date: Optional[datetime] = None
+    last_streak_date: Optional[datetime] = None
+    last_seen_at: Optional[datetime] = None
     plan: Literal["free", "pro", "team"] = "free"
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -99,6 +101,7 @@ class GoalDB(MongoDocumentModel):
     current_phase_index: int = 0
     current_day_index: int = 0
     status: Literal["active", "paused", "completed", "abandoned"] = "active"
+    completed_at: Optional[datetime] = None
     community_room_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -124,6 +127,7 @@ class TaskDB(MongoDocumentModel):
 class SkillDB(MongoDocumentModel):
     user_id: str
     goal_id: str
+    skill_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     domain: str
     prerequisite_skill_ids: List[str] = Field(default_factory=list)

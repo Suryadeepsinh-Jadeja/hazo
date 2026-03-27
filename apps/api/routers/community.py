@@ -301,7 +301,7 @@ async def room_progress(
             continue
 
         # Active today
-        last_active = user_doc.get("last_active_date")
+        last_active = user_doc.get("last_seen_at") or user_doc.get("last_active_date")
         if last_active:
             if isinstance(last_active, datetime):
                 last_active = last_active.date()

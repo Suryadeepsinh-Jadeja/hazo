@@ -112,6 +112,12 @@ export interface DailyTaskCard {
   total_days: number;
 }
 
+export interface TopicCompleteResult {
+  streak_count: number;
+  mastery_updated: boolean;
+  next_topic_title?: string | null;
+}
+
 export interface Subtask {
   subtask_id: string;
   title: string;
@@ -130,11 +136,18 @@ export interface Task {
 }
 
 export interface Skill {
-  _id: string;
+  skill_id: string;
   name: string;
   mastery_level: number;
   domain: string;
-  last_practiced?: string;
+  prerequisite_skill_ids: string[];
+  stored_mastery_level: number;
+  tasks_completed: number;
+  decay_rate: number;
+  days_since_practice?: number;
+  decay_penalty?: number;
+  is_decaying?: boolean;
+  last_practiced?: string | null;
 }
 
 export interface CommunityRoom {
@@ -212,7 +225,7 @@ export const goals = {
   complete: async (
     goalId: string,
     topicId: string,
-  ): Promise<{ status: string }> => {
+  ): Promise<TopicCompleteResult> => {
     const { data } = await api.post(
       `/api/v1/goals/${goalId}/topics/${topicId}/complete`,
     );
@@ -231,6 +244,16 @@ export const goals = {
 
   replan: async (goalId: string): Promise<{ status: string }> => {
     const { data } = await api.post(`/api/v1/goals/${goalId}/replan`);
+    return data;
+  },
+
+  pause: async (goalId: string): Promise<{ message: string; status: string }> => {
+    const { data } = await api.post(`/api/v1/goals/${goalId}/pause`);
+    return data;
+  },
+
+  resume: async (goalId: string): Promise<{ message: string; status: string }> => {
+    const { data } = await api.post(`/api/v1/goals/${goalId}/resume`);
     return data;
   },
 };

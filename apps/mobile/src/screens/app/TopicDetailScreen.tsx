@@ -16,8 +16,10 @@ import api from '../../lib/api';
 import { ResourceCard } from '../../components/ResourceCard';
 import { theme } from '../../constants/theme';
 import { getGoalVisualTheme } from '../../lib/goalVisuals';
+import { goals } from '../../lib/api';
 import { toast } from '../../lib/toast';
 import { useGoalStore } from '../../store/goalStore';
+import { useAuthStore } from '../../store/authStore';
 
 interface TopicResource {
   resource_id?: string;
@@ -55,6 +57,8 @@ export const TopicDetailScreen = () => {
   const route = useRoute<any>();
   const { goalId, topicId } = route.params || {};
   const goalThemes = useGoalStore((state) => state.goalThemes);
+  const user = useAuthStore((state) => state.user);
+  const setUser = useAuthStore((state) => state.setUser);
 
   const [goalTitle, setGoalTitle] = useState('');
   const [phaseTitle, setPhaseTitle] = useState('');
@@ -70,9 +74,18 @@ export const TopicDetailScreen = () => {
         throw new Error('Missing goal or topic');
       }
 
-      await api.post(`/api/v1/goals/${goalId}/topics/${topicId}/complete`);
+      return goals.complete(goalId, topicId);
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      if (user) {
+        setUser({
+          ...user,
+          streak_count: result.streak_count,
+          longest_streak: Math.max(user.longest_streak || 0, result.streak_count),
+          last_streak_date: new Date().toISOString(),
+          last_seen_at: new Date().toISOString(),
+        });
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['todayTask'] }),
         queryClient.invalidateQueries({ queryKey: ['goals'] }),

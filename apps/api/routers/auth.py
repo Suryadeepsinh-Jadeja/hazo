@@ -22,7 +22,7 @@ async def sync_user(data: SyncUserRequest):
         "$set": {
             "email": data.email,
             "name": data.name,
-            "last_active_date": now
+            "last_seen_at": now,
         },
         "$setOnInsert": {
             "supabase_id": data.supabase_id,

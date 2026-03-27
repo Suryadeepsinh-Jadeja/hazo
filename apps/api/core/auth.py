@@ -149,7 +149,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         user_doc = await users_col.find_one_and_update(
             {"supabase_id": supabase_id},
             {
-                "$set": {"last_active_date": now},
+                "$set": {"last_seen_at": now},
                 "$setOnInsert": {
                     "supabase_id": supabase_id,
                     "email": email,
@@ -161,13 +161,13 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             return_document=True,
         )
     else:
-        # Only update last_active_date if stale (> 1 hour)
-        last_active = user_doc.get("last_active_date")
+        # Track app presence separately from streak-worthy completions.
+        last_seen = user_doc.get("last_seen_at") or user_doc.get("last_active_date")
         now = datetime.utcnow()
-        if not last_active or (now - last_active).total_seconds() > 3600:
+        if not last_seen or (now - last_seen).total_seconds() > 3600:
             await users_col.update_one(
                 {"_id": user_doc["_id"]},
-                {"$set": {"last_active_date": now}},
+                {"$set": {"last_seen_at": now}},
             )
 
     return UserDB(**user_doc)

@@ -8,6 +8,8 @@ Endpoints:
   GET    /onboard/status/{session_id}
   GET    /                             (list active goals)
   GET    /{goal_id}                    (full goal detail)
+  POST   /{goal_id}/pause
+  POST   /{goal_id}/resume
   GET    /{goal_id}/today
   POST   /{goal_id}/topics/{topic_id}/complete
   POST   /{goal_id}/topics/{topic_id}/skip
@@ -23,6 +25,7 @@ import sys
 import uuid
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 import redis.asyncio as aioredis
@@ -442,7 +445,7 @@ def _compute_streak(
     last_active_date: Optional[datetime],
 ) -> Dict[str, Any]:
     """Return updated streak_count and longest_streak."""
-    today = date.today()
+    today = _today_for_user(current_user)
     streak = current_user.streak_count
     longest = current_user.longest_streak
 
@@ -461,6 +464,34 @@ def _compute_streak(
 
     longest = max(longest, streak)
     return {"streak_count": streak, "longest_streak": longest}
+
+
+def _today_for_user(current_user: UserDB) -> date:
+    timezone_name = getattr(current_user, "timezone", None) or "UTC"
+    try:
+        return datetime.now(ZoneInfo(timezone_name)).date()
+    except Exception:
+        return datetime.utcnow().date()
+
+
+def _resolve_last_streak_date(current_user: UserDB) -> Optional[datetime]:
+    last_streak_date = getattr(current_user, "last_streak_date", None)
+    if last_streak_date is not None:
+        return last_streak_date
+
+    legacy_last_active = current_user.last_active_date
+    if legacy_last_active is None:
+        return None
+
+    legacy_last_date = (
+        legacy_last_active.date()
+        if isinstance(legacy_last_active, datetime)
+        else legacy_last_active
+    )
+    if legacy_last_date < _today_for_user(current_user):
+        return legacy_last_active
+
+    return None
 
 
 async def _curate_resources_for_topic(
@@ -754,6 +785,42 @@ def _build_topic_context(goal_doc: dict, topic_id: str) -> Dict[str, Any]:
     }
 
 
+def _recompute_goal_state(goal_doc: dict) -> Dict[str, Any]:
+    phases = goal_doc.get("phases", [])
+    total_days = _goal_total_days(goal_doc)
+    open_topics: List[tuple[int, int]] = []
+
+    for phase_index, phase in enumerate(phases):
+        for topic in phase.get("topics", []):
+            if topic.get("status") in ("done", "skipped"):
+                continue
+
+            day_index = topic.get("day_index")
+            if isinstance(day_index, int):
+                open_topics.append((day_index, phase_index))
+
+    if open_topics:
+        next_day_index, next_phase_index = min(open_topics, key=lambda item: item[0])
+        next_status = "paused" if goal_doc.get("status") == "paused" else "active"
+        return {
+            "current_day_index": next_day_index,
+            "current_phase_index": next_phase_index,
+            "status": next_status,
+            "completed_at": None,
+        }
+
+    completed_phase_index = max(0, len(phases) - 1) if phases else 0
+    existing_completed_at = goal_doc.get("completed_at")
+    completed_at = existing_completed_at if isinstance(existing_completed_at, datetime) else datetime.utcnow()
+
+    return {
+        "current_day_index": total_days,
+        "current_phase_index": completed_phase_index,
+        "status": "completed",
+        "completed_at": completed_at,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Request / response schemas
 # ---------------------------------------------------------------------------
@@ -1017,6 +1084,7 @@ async def _generate_roadmap_background(
                 "_id": ObjectId(),
                 "user_id": user_id,
                 "goal_id": goal_id,
+                "skill_id": skill_id,
                 "name": node["name"],
                 "domain": domain,
                 "prerequisite_skill_ids": prereq_ids,
@@ -1269,10 +1337,10 @@ async def onboard_status(
 
 @router.get("")
 async def list_goals(current_user: UserDB = Depends(get_current_user)):
-    """List all active goals for the current user."""
+    """List all non-abandoned goals for the current user."""
     goals_col = get_goals_col()
     cursor = goals_col.find(
-        {"user_id": str(current_user.id), "status": "active"},
+        {"user_id": str(current_user.id), "status": {"$ne": "abandoned"}},
     )
     goals = []
     async for doc in cursor:
@@ -1307,6 +1375,73 @@ async def get_goal(
     doc["total_days"] = computed_total_days
     doc["timeline_target"] = _goal_timeline_target(doc, computed_total_days)
     return doc
+
+
+@router.post("/{goal_id}/pause")
+async def pause_goal(
+    goal_id: str,
+    current_user: UserDB = Depends(get_current_user),
+):
+    goals_col = get_goals_col()
+    try:
+        oid = ObjectId(goal_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid goal_id format.")
+
+    goal_doc = await goals_col.find_one({"_id": oid, "user_id": str(current_user.id)})
+    if goal_doc is None:
+        raise HTTPException(status_code=404, detail="Goal not found.")
+
+    if goal_doc.get("status") == "completed":
+        raise HTTPException(status_code=409, detail="Completed goals cannot be paused.")
+    if goal_doc.get("status") == "abandoned":
+        raise HTTPException(status_code=409, detail="Abandoned goals cannot be paused.")
+    if goal_doc.get("status") == "paused":
+        return {"message": "Goal already paused.", "status": "paused"}
+
+    await goals_col.update_one(
+        {"_id": oid},
+        {"$set": {"status": "paused", "updated_at": datetime.utcnow()}},
+    )
+    await _del_redis(f"daily:task:{current_user.id}:{goal_id}")
+    return {"message": "Goal paused.", "status": "paused"}
+
+
+@router.post("/{goal_id}/resume")
+async def resume_goal(
+    goal_id: str,
+    current_user: UserDB = Depends(get_current_user),
+):
+    goals_col = get_goals_col()
+    try:
+        oid = ObjectId(goal_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid goal_id format.")
+
+    goal_doc = await goals_col.find_one({"_id": oid, "user_id": str(current_user.id)})
+    if goal_doc is None:
+        raise HTTPException(status_code=404, detail="Goal not found.")
+
+    if goal_doc.get("status") == "completed":
+        raise HTTPException(status_code=409, detail="Completed goals cannot be resumed.")
+    if goal_doc.get("status") == "abandoned":
+        raise HTTPException(status_code=409, detail="Abandoned goals cannot be resumed.")
+
+    next_goal_state = _recompute_goal_state({**goal_doc, "status": "active"})
+    await goals_col.update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "current_day_index": next_goal_state["current_day_index"],
+                "current_phase_index": next_goal_state["current_phase_index"],
+                "status": next_goal_state["status"],
+                "completed_at": next_goal_state["completed_at"],
+                "updated_at": datetime.utcnow(),
+            }
+        },
+    )
+    await _del_redis(f"daily:task:{current_user.id}:{goal_id}")
+    return {"message": "Goal resumed.", "status": next_goal_state["status"]}
 
 
 # ── DELETE /{goal_id} ─────────────────────────────────────────────────────
@@ -1429,14 +1564,12 @@ async def complete_topic(
 
     # Locate the topic across all phases
     topic_found = False
-    completed_day_index: Optional[int] = None
     for phase in goal_doc.get("phases", []):
         for topic in phase.get("topics", []):
             if topic["topic_id"] == topic_id:
                 topic["status"] = "done"
                 topic["completed_at"] = datetime.utcnow().isoformat()
                 topic_found = True
-                completed_day_index = topic["day_index"]
                 break
         if topic_found:
             break
@@ -1444,13 +1577,9 @@ async def complete_topic(
     if not topic_found:
         raise HTTPException(status_code=404, detail="Topic not found in this goal.")
 
-    # Advance current_day_index if this topic was at the current day
-    new_day_index = goal_doc["current_day_index"]
-    if completed_day_index is not None and completed_day_index == new_day_index:
-        new_day_index += 1
-
     # ── Streak logic ───────────────────────────────────────────────────────
-    streak_data = _compute_streak(current_user, current_user.last_active_date)
+    streak_data = _compute_streak(current_user, _resolve_last_streak_date(current_user))
+    next_goal_state = _recompute_goal_state(goal_doc)
 
     # ── Persist goal update ────────────────────────────────────────────────
     await goals_col.update_one(
@@ -1458,20 +1587,27 @@ async def complete_topic(
         {
             "$set": {
                 "phases": goal_doc["phases"],
-                "current_day_index": new_day_index,
+                "current_day_index": next_goal_state["current_day_index"],
+                "current_phase_index": next_goal_state["current_phase_index"],
+                "status": next_goal_state["status"],
+                "completed_at": next_goal_state["completed_at"],
                 "updated_at": datetime.utcnow(),
             }
         },
     )
 
-    # ── Persist user streak + last_active_date ─────────────────────────────
+    # ── Persist user streak + streak activity timestamp ────────────────────
+    activity_now = datetime.utcnow()
     await users_col.update_one(
         {"supabase_id": current_user.supabase_id},
         {
             "$set": {
                 "streak_count": streak_data["streak_count"],
                 "longest_streak": streak_data["longest_streak"],
-                "last_active_date": datetime.utcnow(),
+                "last_streak_date": activity_now,
+                "last_seen_at": activity_now,
+                # Keep legacy field in sync for older readers/jobs.
+                "last_active_date": activity_now,
             }
         },
     )
@@ -1530,7 +1666,7 @@ async def complete_topic(
     next_topic_ref: Optional[dict] = None
     for phase in goal_doc.get("phases", []):
         for topic in phase.get("topics", []):
-            if topic.get("day_index") == new_day_index and topic.get("status") in (
+            if topic.get("day_index") == next_goal_state["current_day_index"] and topic.get("status") in (
                 "pending",
                 "in_progress",
             ):
@@ -1597,9 +1733,19 @@ async def skip_topic(
     if not topic_found:
         raise HTTPException(status_code=404, detail="Topic not found in this goal.")
 
+    next_goal_state = _recompute_goal_state(goal_doc)
     await goals_col.update_one(
         {"_id": oid},
-        {"$set": {"phases": goal_doc["phases"], "updated_at": datetime.utcnow()}},
+        {
+            "$set": {
+                "phases": goal_doc["phases"],
+                "current_day_index": next_goal_state["current_day_index"],
+                "current_phase_index": next_goal_state["current_phase_index"],
+                "status": next_goal_state["status"],
+                "completed_at": next_goal_state["completed_at"],
+                "updated_at": datetime.utcnow(),
+            }
+        },
     )
 
     # Invalidate daily task cache so next GET /today recomputes
@@ -1647,9 +1793,19 @@ async def prepare_topic_resources(
     topic_doc["resources"] = generated_payload["resources"]
     topic_doc["practice_links"] = generated_payload["practice_links"]
 
+    next_goal_state = _recompute_goal_state(goal_doc)
     await goals_col.update_one(
         {"_id": oid},
-        {"$set": {"phases": goal_doc["phases"], "updated_at": datetime.utcnow()}},
+        {
+            "$set": {
+                "phases": goal_doc["phases"],
+                "current_day_index": next_goal_state["current_day_index"],
+                "current_phase_index": next_goal_state["current_phase_index"],
+                "status": next_goal_state["status"],
+                "completed_at": next_goal_state["completed_at"],
+                "updated_at": datetime.utcnow(),
+            }
+        },
     )
 
     return {
@@ -1732,9 +1888,19 @@ async def replan_goal(
                 topic["status"] = "pending"  # un-skip after replanning
                 topics_moved += 1
 
+    next_goal_state = _recompute_goal_state(goal_doc)
     await goals_col.update_one(
         {"_id": oid},
-        {"$set": {"phases": goal_doc["phases"], "updated_at": datetime.utcnow()}},
+        {
+            "$set": {
+                "phases": goal_doc["phases"],
+                "current_day_index": next_goal_state["current_day_index"],
+                "current_phase_index": next_goal_state["current_phase_index"],
+                "status": next_goal_state["status"],
+                "completed_at": next_goal_state["completed_at"],
+                "updated_at": datetime.utcnow(),
+            }
+        },
     )
 
     # Invalidate daily task cache
