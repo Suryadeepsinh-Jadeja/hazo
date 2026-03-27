@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { theme } from '../../constants/theme';
-import { signInWithEmail, signInWithGoogle } from '../../lib/supabase';
+import { getFriendlyLoginError, signInWithEmail, signInWithGoogle } from '../../lib/supabase';
 import { toast } from '../../lib/toast';
 
 export const LoginScreen = () => {
@@ -24,7 +24,7 @@ export const LoginScreen = () => {
       if (error) throw error;
       toast.show('Logged in successfully.', 'success');
     } catch (err: any) {
-      setError(err.message || 'Login failed.');
+      setError(await getFriendlyLoginError(email, err));
     } finally {
       setLoading(false);
     }

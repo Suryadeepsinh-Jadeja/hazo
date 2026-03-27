@@ -883,6 +883,8 @@ class TopicCompleteResponse(BaseModel):
     streak_count: int
     mastery_updated: bool
     next_topic_title: Optional[str]
+    goal_completed: bool = False
+    completed_goal_title: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -1618,9 +1620,15 @@ async def complete_topic(
     if not topic_found:
         raise HTTPException(status_code=404, detail="Topic not found in this goal.")
 
+    previous_goal_status = goal_doc.get("status")
+
     # ── Streak logic ───────────────────────────────────────────────────────
     streak_data = _compute_streak(current_user, _resolve_last_streak_date(current_user))
     next_goal_state = _recompute_goal_state(goal_doc)
+    goal_completed = (
+        next_goal_state["status"] == "completed"
+        and previous_goal_status != "completed"
+    )
 
     # ── Persist goal update ────────────────────────────────────────────────
     await goals_col.update_one(
@@ -1730,6 +1738,8 @@ async def complete_topic(
         streak_count=streak_data["streak_count"],
         mastery_updated=mastery_updated,
         next_topic_title=next_topic_title,
+        goal_completed=goal_completed,
+        completed_goal_title=goal_doc.get("title"),
     )
 
 

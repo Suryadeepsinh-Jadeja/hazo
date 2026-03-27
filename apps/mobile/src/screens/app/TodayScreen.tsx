@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useQuery, useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import LinearGradient from 'react-native-linear-gradient';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, withRepeat, withDelay, Easing } from 'react-native-reanimated';
-import { Flame, CheckCircle2, Clock, BookOpen, Sparkles } from 'lucide-react-native';
+import { Flame, CheckCircle2, Clock, BookOpen, Sparkles, Trophy } from 'lucide-react-native';
 import { Linking } from 'react-native';
 
 import { theme } from '../../constants/theme';
@@ -235,6 +235,7 @@ export const TodayScreen = () => {
   const [confettiActive, setConfettiActive] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
   const [celebrationStreak, setCelebrationStreak] = useState<number | null>(null);
+  const [goalCelebrationTitle, setGoalCelebrationTitle] = useState<string | null>(null);
   const [simplifyTarget, setSimplifyTarget] = useState<{ goalId: string; topicId: string } | null>(null);
   const [completingGoalId, setCompletingGoalId] = useState<string | null>(null);
   const [activeDeckIndex, setActiveDeckIndex] = useState(0);
@@ -363,7 +364,7 @@ export const TodayScreen = () => {
     onMutate: ({ goalId }) => {
       setCompletingGoalId(goalId);
     },
-    onSuccess: (result) => {
+    onSuccess: (result, variables) => {
       setCelebrationStreak(result.streak_count);
       if (user) {
         setUser({
@@ -376,6 +377,10 @@ export const TodayScreen = () => {
       }
       setConfettiActive(true);
       setToastVisible(true);
+      if (result.goal_completed) {
+        const completedGoal = goals.find((goal) => goal._id === variables.goalId);
+        setGoalCelebrationTitle(result.completed_goal_title || completedGoal?.title || 'This goal');
+      }
       setTimeout(() => {
         setToastVisible(false);
         setCelebrationStreak(null);
@@ -769,6 +774,38 @@ export const TodayScreen = () => {
           <Text style={styles.toastText}>🔥 {celebrationStreak || currentStreak} day streak!</Text>
         </Animated.View>
       )}
+
+      <Modal visible={!!goalCelebrationTitle} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.goalCelebrationCard}>
+            <View style={styles.goalCelebrationIconWrap}>
+              <Trophy color={theme.colors.warning.amberDark} size={28} />
+            </View>
+            <Text style={styles.goalCelebrationEyebrow}>Goal Complete</Text>
+            <Text style={styles.goalCelebrationTitle}>{goalCelebrationTitle}</Text>
+            <Text style={styles.goalCelebrationBody}>
+              You finished this roadmap. Hazo kept the momentum alive, now let&apos;s turn it into your next win.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => {
+                setGoalCelebrationTitle(null);
+                navigation.navigate('Goals');
+              }}
+            >
+              <Text style={styles.primaryButtonText}>See My Goals</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.goalCelebrationSecondaryButton}
+              onPress={() => setGoalCelebrationTitle(null)}
+            >
+              <Text style={styles.goalCelebrationSecondaryText}>Keep Going</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Simplify Modal */}
       <Modal visible={!!simplifyTarget} transparent animationType="slide">
@@ -1539,6 +1576,62 @@ const styles = StyleSheet.create({
     color: theme.colors.primary.inkMuted,
     lineHeight: 22,
     marginBottom: theme.spacing[16],
+  },
+  goalCelebrationCard: {
+    width: '100%',
+    backgroundColor: theme.colors.neutral.white,
+    borderRadius: theme.borderRadius.xl,
+    padding: theme.spacing[24],
+    borderWidth: 1,
+    borderColor: theme.colors.warning.amber,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 8,
+  },
+  goalCelebrationIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.warning.amberLight,
+    marginBottom: theme.spacing[16],
+  },
+  goalCelebrationEyebrow: {
+    fontFamily: theme.typography.fontMono,
+    fontSize: theme.typography.fontSizes.xs,
+    color: theme.colors.warning.amberDark,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: theme.spacing[8],
+  },
+  goalCelebrationTitle: {
+    fontFamily: theme.typography.fontDisplay,
+    fontSize: theme.typography.fontSizes.xl,
+    color: theme.colors.primary.ink,
+    textAlign: 'center',
+    marginBottom: theme.spacing[8],
+  },
+  goalCelebrationBody: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.md,
+    color: theme.colors.primary.inkMuted,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: theme.spacing[20],
+  },
+  goalCelebrationSecondaryButton: {
+    paddingVertical: theme.spacing[12],
+    paddingHorizontal: theme.spacing[16],
+  },
+  goalCelebrationSecondaryText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.sm,
+    color: theme.colors.primary.inkMuted,
+    fontWeight: theme.typography.fontWeights.semibold,
   },
   loadingSpinner: {
     marginBottom: theme.spacing[12],

@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = Config.SUPABASE_URL || Config.PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey =
   Config.SUPABASE_ANON_KEY || Config.PUBLIC_SUPABASE_ANON_KEY || '';
+const apiUrl = Config.API_URL || Config.PUBLIC_API_URL || 'http://localhost:8000';
 const appRedirectUrl = 'hazo://auth';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -20,6 +21,80 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 export const signInWithEmail = async (email: string, password: string) => {
   return await supabase.auth.signInWithPassword({ email, password });
+};
+
+const postJson = async <T>(path: string, body: Record<string, unknown>): Promise<T | null> => {
+  try {
+    const response = await fetch(`${apiUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+};
+
+export const syncSignedUpUser = async (user: { id: string; email?: string | null }, name: string) => {
+  if (!user?.id || !user?.email) {
+    return;
+  }
+
+  await postJson('/api/v1/auth/sync', {
+    supabase_id: user.id,
+    email: user.email,
+    name,
+  });
+};
+
+export const checkAccountExists = async (email: string): Promise<boolean | null> => {
+  const result = await postJson<{ exists: boolean }>('/api/v1/auth/email-status', { email });
+  return result?.exists ?? null;
+};
+
+export const getFriendlyLoginError = async (email: string, error: any): Promise<string> => {
+  const rawMessage = (error?.message || '').toLowerCase();
+
+  if (rawMessage.includes('email not confirmed')) {
+    return 'Please verify your email before logging in.';
+  }
+
+  if (rawMessage.includes('invalid login credentials')) {
+    const exists = await checkAccountExists(email);
+    if (exists === false) {
+      return 'No account found for this email. Create one first.';
+    }
+
+    if (exists === true) {
+      return 'That password does not match this account. Try again.';
+    }
+
+    return 'Login failed. Check your email and password, then try again.';
+  }
+
+  return error?.message || 'Login failed.';
+};
+
+export const getFriendlySignupError = (error: any): string => {
+  const rawMessage = (error?.message || '').toLowerCase();
+
+  if (rawMessage.includes('user already registered')) {
+    return 'An account already exists for this email. Log in instead.';
+  }
+
+  if (rawMessage.includes('password')) {
+    return error?.message || 'Choose a stronger password and try again.';
+  }
+
+  return error?.message || 'Signup failed.';
 };
 
 export const signUpWithEmail = async (email: string, password: string, name: string) => {

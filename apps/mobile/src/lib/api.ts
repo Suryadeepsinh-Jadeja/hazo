@@ -117,6 +117,8 @@ export interface TopicCompleteResult {
   streak_count: number;
   mastery_updated: boolean;
   next_topic_title?: string | null;
+  goal_completed?: boolean;
+  completed_goal_title?: string | null;
 }
 
 export interface Subtask {
@@ -188,6 +190,10 @@ export interface AvailabilityExtractionResult {
   availability: WeeklyAvailability;
   summary: string[];
   warnings: string[];
+}
+
+export interface DeleteAccountResult {
+  message: string;
 }
 
 // ─── Goals API ───────────────────────────────────────────────────────────────
@@ -317,6 +323,11 @@ export const users = {
       },
       timeout: 60000,
     });
+    return data;
+  },
+
+  deleteAccount: async (): Promise<DeleteAccountResult> => {
+    const { data } = await api.delete('/api/v1/users/me');
     return data;
   },
 };

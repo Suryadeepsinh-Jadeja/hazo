@@ -1,12 +1,23 @@
 import mimetypes
+import os
 import re
 from typing import Any, Literal, Optional
 
+import httpx
+from bson import ObjectId
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from core.auth import get_current_user
-from db.database import get_goals_col, get_users_col
+from db.database import (
+    get_database,
+    get_goals_col,
+    get_mentor_sessions_col,
+    get_rooms_col,
+    get_skills_col,
+    get_tasks_col,
+    get_users_col,
+)
 from db.models import UserDB, WeeklyAvailability
 from packages.ai.gemini_client import call_gemini_json_multimodal
 
@@ -23,6 +34,8 @@ _WEEKDAYS = [
 ]
 _TIME_RE = re.compile(r"^\d{2}:\d{2}$")
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
 
 
 class PreferencesUpdate(BaseModel):
@@ -35,6 +48,10 @@ class AvailabilityExtractionResponse(BaseModel):
     availability: WeeklyAvailability
     summary: list[str]
     warnings: list[str]
+
+
+class DeleteAccountResponse(BaseModel):
+    message: str
 
 
 def _empty_availability_dict() -> dict[str, list[dict[str, str]]]:
@@ -132,6 +149,31 @@ Rules:
 """.strip()
 
 
+async def _delete_supabase_auth_user(current_user: UserDB) -> None:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Account deletion is unavailable because Supabase admin credentials are not configured.",
+        )
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+    }
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.delete(
+            f"{SUPABASE_URL}/auth/v1/admin/users/{current_user.supabase_id}",
+            headers=headers,
+        )
+
+    if response.status_code not in (200, 204):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not delete the auth account. Please try again in a moment.",
+        )
+
+
 @router.put("/me/availability", response_model=UserDB)
 async def update_availability(
     availability: WeeklyAvailability,
@@ -225,6 +267,70 @@ async def update_preferences(
             setattr(current_user, key, value)
 
     return current_user
+
+
+@router.delete("/me", response_model=DeleteAccountResponse)
+async def delete_account(
+    current_user: UserDB = Depends(get_current_user),
+):
+    await _delete_supabase_auth_user(current_user)
+
+    user_id = str(current_user.id)
+    users_col = get_users_col()
+    goals_col = get_goals_col()
+    tasks_col = get_tasks_col()
+    skills_col = get_skills_col()
+    mentor_col = get_mentor_sessions_col()
+    rooms_col = get_rooms_col()
+    db = get_database()
+    members_col = db.community_members
+    posts_col = db.community_posts
+
+    owned_room_docs = await rooms_col.find(
+        {"created_by": current_user.supabase_id},
+        {"_id": 1},
+    ).to_list(length=None)
+    owned_room_ids = [str(doc["_id"]) for doc in owned_room_docs]
+    owned_room_oids = [doc["_id"] for doc in owned_room_docs]
+
+    member_docs = await members_col.find(
+        {"user_id": current_user.supabase_id},
+        {"room_id": 1},
+    ).to_list(length=None)
+    membership_counts: dict[str, int] = {}
+    for doc in member_docs:
+        room_id = doc.get("room_id")
+        if not room_id or room_id in owned_room_ids:
+            continue
+        membership_counts[room_id] = membership_counts.get(room_id, 0) + 1
+
+    await goals_col.delete_many({"user_id": user_id})
+    await tasks_col.delete_many({"user_id": user_id})
+    await skills_col.delete_many({"user_id": user_id})
+    await mentor_col.delete_many({"user_id": {"$in": [user_id, current_user.supabase_id]}})
+
+    if owned_room_ids:
+        await posts_col.delete_many({"room_id": {"$in": owned_room_ids}})
+        await members_col.delete_many({"room_id": {"$in": owned_room_ids}})
+        await rooms_col.delete_many({"_id": {"$in": owned_room_oids}})
+
+    await posts_col.delete_many({"user_id": current_user.supabase_id})
+    await members_col.delete_many({"user_id": current_user.supabase_id})
+
+    for room_id, count in membership_counts.items():
+        try:
+            room_filter = {"_id": ObjectId(room_id)}
+        except Exception:
+            room_filter = {"_id": room_id}
+
+        await rooms_col.update_one(
+            room_filter,
+            {"$inc": {"member_count": -count}},
+        )
+
+    await users_col.delete_one({"supabase_id": current_user.supabase_id})
+
+    return DeleteAccountResponse(message="Account deleted.")
 
 
 @router.get("/me/stats")

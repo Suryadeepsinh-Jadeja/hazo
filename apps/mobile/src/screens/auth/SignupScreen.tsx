@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { theme } from '../../constants/theme';
-import { signUpWithEmail } from '../../lib/supabase';
+import { getFriendlySignupError, signUpWithEmail, syncSignedUpUser } from '../../lib/supabase';
 import { toast } from '../../lib/toast';
 
 export const SignupScreen = () => {
@@ -24,6 +24,10 @@ export const SignupScreen = () => {
       const { data, error } = await signUpWithEmail(email, password, name);
       if (error) throw error;
 
+      if (data.user) {
+        await syncSignedUpUser(data.user, name);
+      }
+
       if (data.session) {
         toast.show('Account created successfully.', 'success');
         return;
@@ -32,7 +36,7 @@ export const SignupScreen = () => {
       toast.show('Account created. Please check your email to verify, then log in.', 'success');
       navigation.navigate('Login');
     } catch (err: any) {
-      setError(err.message || 'Signup failed.');
+      setError(getFriendlySignupError(err));
     } finally {
       setLoading(false);
     }

@@ -86,6 +86,12 @@ export const TopicDetailScreen = () => {
           last_seen_at: new Date().toISOString(),
         });
       }
+      if (result.goal_completed) {
+        toast.show(
+          `Goal complete: ${result.completed_goal_title || goalTitle || 'your roadmap'}`,
+          'success'
+        );
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['todayTask'] }),
         queryClient.invalidateQueries({ queryKey: ['goals'] }),

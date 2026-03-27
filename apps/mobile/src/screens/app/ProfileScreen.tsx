@@ -67,6 +67,20 @@ export const ProfileScreen = () => {
     },
   });
 
+  const deleteAccountMutation = useMutation({
+    mutationFn: users.deleteAccount,
+    onSuccess: async () => {
+      queryClient.clear();
+      await signOut();
+    },
+    onError: (error: any) => {
+      Alert.alert(
+        'Could not delete account',
+        error?.response?.data?.detail || 'Please try again in a moment.'
+      );
+    },
+  });
+
   useEffect(() => {
     if (!profile) {
       return;
@@ -193,6 +207,21 @@ export const ProfileScreen = () => {
     });
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This permanently deletes your account, goals, tasks, mentor history, skills, and community activity. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: deleteAccountMutation.isPending ? 'Deleting...' : 'Delete Account',
+          style: 'destructive',
+          onPress: () => deleteAccountMutation.mutate(),
+        },
+      ]
+    );
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <View style={styles.userCard}>
@@ -312,6 +341,16 @@ export const ProfileScreen = () => {
         <TouchableOpacity style={styles.signOutButton} onPress={() => signOut()}>
           <LogOut color={theme.colors.danger.rose} size={20} />
           <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.deleteAccountButton, deleteAccountMutation.isPending && styles.deleteAccountButtonDisabled]}
+          onPress={handleDeleteAccount}
+          disabled={deleteAccountMutation.isPending}
+        >
+          <Text style={styles.deleteAccountText}>
+            {deleteAccountMutation.isPending ? 'Deleting account...' : 'Delete Account'}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -562,6 +601,24 @@ const styles = StyleSheet.create({
     color: theme.colors.danger.rose,
     fontWeight: theme.typography.fontWeights.semibold,
     marginLeft: theme.spacing[12],
+  },
+  deleteAccountButton: {
+    marginTop: theme.spacing[12],
+    paddingVertical: theme.spacing[16],
+    alignItems: 'center',
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.danger.rose,
+    backgroundColor: theme.colors.neutral.white,
+  },
+  deleteAccountButtonDisabled: {
+    opacity: 0.6,
+  },
+  deleteAccountText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.md,
+    color: theme.colors.danger.rose,
+    fontWeight: theme.typography.fontWeights.semibold,
   },
   versionText: {
     fontFamily: theme.typography.fontMono,
