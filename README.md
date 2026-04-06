@@ -4,14 +4,15 @@ Hazo is an AI-guided goal execution app built as a monorepo:
 
 - `apps/api`: FastAPI backend
 - `apps/mobile`: React Native mobile app
-- `packages/ai`: shared Gemini prompt/client code
+- `packages/ai`: shared LLM prompt/client code
 
 The app flow is:
 
 1. Sign in with Supabase
 2. Create a goal
-3. Let the backend generate a roadmap and daily learning plan
-4. Work through daily goal tasks and personal tasks in the mobile app
+3. Set weekly availability manually or import a timetable photo/PDF and review the extracted free slots
+4. Let the backend generate a roadmap and daily learning plan
+5. Work through daily goal tasks, personal tasks, mentor chat, and progress tracking in the mobile app
 
 ## Monorepo Structure
 
@@ -32,7 +33,7 @@ Hazo/
 - Backend: FastAPI, Motor, Redis, APScheduler
 - Database: MongoDB
 - Auth: Supabase
-- AI: Google Gemini
+- AI: Google Gemini or OpenRouter
 - Error tracking: Sentry
 
 ## Prerequisites
@@ -165,6 +166,12 @@ Optional OpenRouter envs:
 - `OPENROUTER_BASE_URL`
 - `OPENROUTER_SITE_URL`
 - `OPENROUTER_APP_NAME`
+
+Important provider note:
+
+- Text generation flows work with either Gemini or OpenRouter.
+- Timetable image/PDF extraction currently requires Gemini multimodal support.
+- If you set `LLM_PROVIDER=openrouter`, the availability upload-review flow will not work unless you add a separate multimodal provider path.
 
 ### 5. Sentry
 
@@ -457,6 +464,11 @@ Check:
 - the backend was restarted after changing it
 - the selected provider quota has not been exhausted
 
+If you are using OpenRouter, also remember:
+
+- roadmap generation, mentor streaming, and other text flows should work
+- timetable image/PDF extraction will fail until a multimodal OpenRouter path is implemented
+
 ### Redis-related goal or mentor issues
 
 Check:
@@ -498,12 +510,16 @@ cd apps/mobile/android
 What is working well:
 
 - backend auth flow with Supabase
-- goal creation and roadmap generation
-- daily task flow
+- goal creation, roadmap generation, and completed-goal lifecycle
+- daily goal/task flow with streak tracking
+- weekly availability editor and timetable upload-review flow
+- DB-backed skills tracking
+- profile account deletion
 - Android release APK build
 
 What still needs production hardening:
 
 - production Android signing
 - final iOS polish and validation
+- full OpenRouter multimodal support for upload-based extraction
 - end-to-end deployment documentation for hosted environments
