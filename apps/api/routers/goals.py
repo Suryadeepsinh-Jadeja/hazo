@@ -1676,16 +1676,23 @@ async def complete_topic(
     ).lower()
 
     mastery_updated = False
-    matched_skill = await skills_col.find_one(
-        {
-            "user_id": str(current_user.id),
-            "goal_id": goal_id,
-            "name": {
-                "$regex": "|".join(topic_title_lower.split()[:3]),
-                "$options": "i",
-            },
-        }
-    )
+    topic_keywords = [
+        re.escape(part)
+        for part in topic_title_lower.split()
+        if part.strip()
+    ][:3]
+    matched_skill = None
+    if topic_keywords:
+        matched_skill = await skills_col.find_one(
+            {
+                "user_id": str(current_user.id),
+                "goal_id": goal_id,
+                "name": {
+                    "$regex": "|".join(topic_keywords),
+                    "$options": "i",
+                },
+            }
+        )
     if matched_skill:
         new_mastery = min(100, matched_skill.get("mastery_level", 0) + 40)
         await skills_col.update_one(
