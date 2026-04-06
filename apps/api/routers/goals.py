@@ -861,6 +861,40 @@ def _recompute_goal_state(goal_doc: dict) -> Dict[str, Any]:
     }
 
 
+async def _ensure_goal_state_consistency(goals_col, goal_doc: dict) -> dict:
+    next_goal_state = _recompute_goal_state(goal_doc)
+    current_snapshot = {
+        "current_day_index": goal_doc.get("current_day_index"),
+        "current_phase_index": goal_doc.get("current_phase_index"),
+        "status": goal_doc.get("status"),
+        "completed_at": goal_doc.get("completed_at"),
+    }
+
+    if current_snapshot == next_goal_state:
+        return goal_doc
+
+    goal_doc["current_day_index"] = next_goal_state["current_day_index"]
+    goal_doc["current_phase_index"] = next_goal_state["current_phase_index"]
+    goal_doc["status"] = next_goal_state["status"]
+    goal_doc["completed_at"] = next_goal_state["completed_at"]
+
+    if goal_doc.get("_id") is not None:
+        await goals_col.update_one(
+            {"_id": goal_doc["_id"]},
+            {
+                "$set": {
+                    "current_day_index": next_goal_state["current_day_index"],
+                    "current_phase_index": next_goal_state["current_phase_index"],
+                    "status": next_goal_state["status"],
+                    "completed_at": next_goal_state["completed_at"],
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
+
+    return goal_doc
+
+
 # ---------------------------------------------------------------------------
 # Request / response schemas
 # ---------------------------------------------------------------------------
@@ -1386,6 +1420,7 @@ async def list_goals(current_user: UserDB = Depends(get_current_user)):
     )
     goals = []
     async for doc in cursor:
+        doc = await _ensure_goal_state_consistency(goals_col, doc)
         doc["_id"] = str(doc["_id"])
         computed_total_days = _goal_total_days(doc)
         doc["total_days"] = computed_total_days
@@ -1412,6 +1447,7 @@ async def get_goal(
     if doc is None:
         raise HTTPException(status_code=404, detail="Goal not found.")
 
+    doc = await _ensure_goal_state_consistency(goals_col, doc)
     doc["_id"] = str(doc["_id"])
     computed_total_days = _goal_total_days(doc)
     doc["total_days"] = computed_total_days
@@ -1572,6 +1608,7 @@ async def get_today_task(
     if doc is None:
         raise HTTPException(status_code=404, detail="Goal not found.")
 
+    doc = await _ensure_goal_state_consistency(goals_col, doc)
     doc["_id"] = str(doc["_id"])
     card = _make_daily_task_card(doc, str(current_user.id))
 
