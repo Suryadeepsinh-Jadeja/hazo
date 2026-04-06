@@ -92,11 +92,21 @@ _FENCE_RE = re.compile(
     r"```(?:json)?\s*\n?(.*?)\n?\s*```",
     re.DOTALL,
 )
+_JSON_LABEL_RE = re.compile(r"^\s*json\s*[:\-]?\s*", re.IGNORECASE)
+_MAX_LOGGED_RAW_PREVIEW = 4000
 
 
 def _extract_json_text(raw: str) -> str:
     match = _FENCE_RE.search(raw)
-    return match.group(1).strip() if match else raw.strip()
+    text = match.group(1).strip() if match else raw.strip()
+    return _JSON_LABEL_RE.sub("", text, count=1).strip()
+
+
+def _trim_raw_preview(raw: str, limit: int = _MAX_LOGGED_RAW_PREVIEW) -> str:
+    text = raw.strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit].rstrip()}\n... [truncated {len(text) - limit} chars]"
 
 
 def _close_unbalanced_json(text: str) -> str:
@@ -134,35 +144,48 @@ def _salvage_json_text(text: str) -> str | None:
     if not stripped:
         return None
 
-    start_indexes = [idx for idx in (stripped.find("["), stripped.find("{")) if idx != -1]
-    if not start_indexes:
-        return None
-
-    candidate_source = stripped[min(start_indexes):].strip()
-    if not candidate_source:
-        return None
-
-    closing_positions = [
-        idx for idx, char in enumerate(candidate_source) if char in "}]"
+    decoder = json.JSONDecoder()
+    start_indexes = [
+        idx for idx, char in enumerate(stripped) if char in "[{"
     ]
 
-    for end_idx in reversed(closing_positions):
-        candidate = candidate_source[: end_idx + 1].rstrip()
-        candidate = re.sub(r",\s*$", "", candidate)
-        candidate = _close_unbalanced_json(candidate)
+    for start_idx in start_indexes:
+        candidate_source = stripped[start_idx:].lstrip()
+        if not candidate_source:
+            continue
+
         try:
-            json.loads(candidate)
-            return candidate
+            parsed, end_idx = decoder.raw_decode(candidate_source)
+            candidate = json.dumps(parsed, ensure_ascii=False)
+            trailing = candidate_source[end_idx:].strip()
+            if not trailing or trailing.startswith((".", ",", ";")):
+                return candidate
+        except json.JSONDecodeError:
+            pass
+
+        closing_positions = [
+            idx for idx, char in enumerate(candidate_source) if char in "}]"
+        ]
+
+        for end_idx in reversed(closing_positions):
+            candidate = candidate_source[: end_idx + 1].rstrip()
+            candidate = re.sub(r",\s*$", "", candidate)
+            candidate = _close_unbalanced_json(candidate)
+            try:
+                json.loads(candidate)
+                return candidate
+            except json.JSONDecodeError:
+                continue
+
+        fallback = re.sub(r",\s*$", "", candidate_source.rstrip())
+        fallback = _close_unbalanced_json(fallback)
+        try:
+            json.loads(fallback)
+            return fallback
         except json.JSONDecodeError:
             continue
 
-    fallback = re.sub(r",\s*$", "", candidate_source.rstrip())
-    fallback = _close_unbalanced_json(fallback)
-    try:
-        json.loads(fallback)
-        return fallback
-    except json.JSONDecodeError:
-        return None
+    return None
 
 
 def _is_rate_limited(exc: Exception) -> bool:
@@ -543,7 +566,7 @@ async def call_gemini_json(
         logger.error(
             "Failed to parse %s response as JSON.\n--- RAW TEXT ---\n%s\n--- END ---",
             provider,
-            raw,
+            _trim_raw_preview(raw),
         )
         raise ValueError(
             f"{provider} returned invalid JSON: {exc}. "
@@ -582,7 +605,7 @@ async def call_gemini_json_multimodal(
         logger.error(
             "Failed to parse multimodal %s response as JSON.\n--- RAW TEXT ---\n%s\n--- END ---",
             provider,
-            raw,
+            _trim_raw_preview(raw),
         )
         raise ValueError(
             f"{provider} returned invalid JSON: {exc}. "

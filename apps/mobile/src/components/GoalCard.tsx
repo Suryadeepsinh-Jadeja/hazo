@@ -57,6 +57,10 @@ export const GoalCard = ({ goal, onPress, onDelete, deleting = false }: GoalCard
       : typeof nextOpenDayIndex === 'number'
         ? Math.min(nextOpenDayIndex + 1, goal.total_days || 1)
         : fallbackCurrentDay;
+  const dayLabel =
+    goal.status === 'completed'
+      ? `Completed in ${goal.total_days} days`
+      : `Next up: Day ${displayDay} of ${goal.total_days}`;
   const targetDate = goal.timeline_target
     ? new Date(goal.timeline_target).toLocaleDateString()
     : null;
@@ -98,7 +102,7 @@ export const GoalCard = ({ goal, onPress, onDelete, deleting = false }: GoalCard
         <Text style={styles.phaseText} numberOfLines={1}>
           {targetDate ? `Target ${targetDate}` : 'Active roadmap'}
         </Text>
-        <Text style={styles.daysText}>Day {displayDay} of {goal.total_days}</Text>
+        <Text style={styles.daysText}>{dayLabel}</Text>
       </View>
 
       <View style={styles.progressBarBg}>
@@ -114,7 +118,7 @@ export const GoalCard = ({ goal, onPress, onDelete, deleting = false }: GoalCard
       <View style={[styles.streakRow, { backgroundColor: visualTheme.pillBg }]}>
         <Flame color={visualTheme.pillText} size={16} strokeWidth={2.5} />
         <Text style={[styles.streakText, { color: visualTheme.pillText }]}>
-          {Math.min(completedDayCount, goal.total_days || 1)}/{goal.total_days} complete
+          {Math.min(completedDayCount, goal.total_days || 1)}/{goal.total_days} days done
         </Text>
       </View>
 
