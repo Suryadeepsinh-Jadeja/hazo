@@ -364,7 +364,7 @@ export const TodayScreen = () => {
     onMutate: ({ goalId }) => {
       setCompletingGoalId(goalId);
     },
-    onSuccess: (result, variables) => {
+    onSuccess: async (result, variables) => {
       setCelebrationStreak(result.streak_count);
       if (user) {
         setUser({
@@ -386,11 +386,13 @@ export const TodayScreen = () => {
         setCelebrationStreak(null);
       }, 3000);
       setTimeout(() => setConfettiActive(false), 3500);
-      queryClient.invalidateQueries({ queryKey: ['todayTask'] });
-      queryClient.invalidateQueries({ queryKey: ['goals'] });
-      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
-      queryClient.invalidateQueries({ queryKey: ['userStats'] });
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['userProfile'] }),
+        queryClient.invalidateQueries({ queryKey: ['userStats'] }),
+        queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+        queryClient.refetchQueries({ queryKey: ['goals'], exact: true }),
+        queryClient.refetchQueries({ queryKey: ['todayTask', variables.goalId], exact: true }),
+      ]);
     },
     onSettled: () => {
       setCompletingGoalId(null);
@@ -401,9 +403,12 @@ export const TodayScreen = () => {
     mutationFn: async ({ goalId, topicId }: { goalId: string; topicId: string }) => {
       await api.post(`/api/v1/goals/${goalId}/topics/${topicId}/skip`);
     },
-    onSuccess: () => {
+    onSuccess: async (_data, variables) => {
       setSimplifyTarget(null);
-      queryClient.invalidateQueries({ queryKey: ['todayTask'] });
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ['goals'], exact: true }),
+        queryClient.refetchQueries({ queryKey: ['todayTask', variables.goalId], exact: true }),
+      ]);
     }
   });
 
