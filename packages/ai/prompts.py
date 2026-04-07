@@ -291,6 +291,12 @@ Structured answers:
 2. NO topic may exceed {max_topic_minutes} minutes (daily_hours × 60 × 1.2).
    If a topic is bigger, split it into sub-topics.
 
+2A. ONE TOPIC = ONE ROADMAP DAY.
+   Every topic represents the learner's primary task for exactly one day.
+   Therefore, the TOTAL NUMBER OF TOPICS across all phases must equal exactly {timeline_days}.
+   If the goal spans many months, you MUST break the syllabus into many narrow, day-sized topics.
+   Do NOT compress a 6-month plan into 10 broad topics.
+
 3. BE CONCISE. Do NOT include redundant, obvious, or padded topics.
    Every topic must be genuinely essential for achieving the goal.
    Prefer depth over breadth. Cut topics a learner could skip.
@@ -322,6 +328,8 @@ Structured answers:
    Each phase should represent a meaningful milestone.
    Front-load foundations, then guided practice, then applied work/mock evaluation.
    Phase durations must be realistic and proportional to topic difficulty.
+   The sum of phase.duration_days must equal exactly {timeline_days}.
+   Each phase.duration_days must equal the number of topics inside that phase.
 
 8. DOMAIN-SPECIFIC ORDERING:
    - competitive_programming: Arrays → Strings → Sorting → Hashing →
@@ -380,6 +388,53 @@ No markdown fences, no explanation — just the XML-wrapped JSON.
     }}
   ]
 }}
+"""
+
+
+def roadmap_expansion_prompt(profile: dict, draft_roadmap: dict, current_topic_count: int) -> str:
+    goal_title = profile.get("goal_title", "")
+    domain = profile.get("domain", "")
+    timeline_days = profile.get("timeline_days", 30)
+    daily_hours = profile.get("daily_hours", 2)
+    prior_knowledge = profile.get("prior_knowledge", "beginner")
+    budget = profile.get("budget", "free")
+    qa_pairs = profile.get("qa_pairs", [])
+    answers = profile.get("answers", {})
+    draft_json = json.dumps(draft_roadmap, indent=2, ensure_ascii=False)
+    qa_context = _qa_lines(qa_pairs)
+    answers_json = json.dumps(answers, indent=2, ensure_ascii=False) if answers else "{}"
+
+    return f"""You are repairing and expanding a learning roadmap so it actually fits the learner's requested timeline.
+
+The current roadmap is too compressed: it has only {current_topic_count} topics, but the learner needs {timeline_days} roadmap days.
+
+Goal: "{goal_title}"
+Domain: {domain}
+Timeline: {timeline_days} days
+Daily study time: {daily_hours} hours
+Prior knowledge: {prior_knowledge}
+Budget: {budget}
+
+Question-answer context:
+{qa_context}
+
+Structured answers:
+{answers_json}
+
+Current draft roadmap:
+{draft_json}
+
+Rules:
+1. Preserve the overall direction and phase intent of the draft where sensible.
+2. EXPAND broad topics into narrower day-sized topics until the total number of topics equals exactly {timeline_days}.
+3. One topic = one day. No exceptions.
+4. Each phase.duration_days must equal the number of topics in that phase.
+5. Keep prerequisite order logical and realistic.
+6. Avoid filler like "revision day" unless it has a concrete, scoped purpose.
+7. Keep each topic specific, outcome-oriented, and completable in one day.
+8. Keep resource_queries EXACTLY 3 per topic.
+
+Return ONLY valid JSON inside <roadmap>...</roadmap> tags using the same schema as before.
 """
 
 

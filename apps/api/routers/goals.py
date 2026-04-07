@@ -58,6 +58,7 @@ from packages.ai.prompts import (
     followup_questions_prompt,
     replan_prompt,
     resource_curation_prompt,
+    roadmap_expansion_prompt,
     roadmap_generation_prompt,
     supporting_resource_curation_prompt,
 )
@@ -468,6 +469,10 @@ def _clamp_roadmap_to_timeline(roadmap_data: Dict[str, Any], timeline_days: int)
     roadmap_data["total_days"] = total_topics
     roadmap_data["total_phases"] = len(clamped_phases)
     return roadmap_data
+
+
+def _roadmap_topic_count(roadmap_data: Dict[str, Any]) -> int:
+    return sum(len(phase.get("topics", [])) for phase in roadmap_data.get("phases", []))
 
 
 async def _get_redis_json(key: str) -> Optional[dict]:
@@ -1091,8 +1096,25 @@ async def _generate_roadmap_background(
         }
 
         raw_roadmap = await call_gemini(roadmap_generation_prompt(profile), max_tokens=65536)
+        parsed_roadmap = _extract_roadmap_json(raw_roadmap)
+        topic_count = _roadmap_topic_count(parsed_roadmap)
+        min_acceptable_topics = max(7, int(timeline_days * 0.7))
+
+        if topic_count < min_acceptable_topics:
+            logger.warning(
+                "Roadmap draft for %s was too compressed (%d topics for %d days). Requesting expansion.",
+                goal_text,
+                topic_count,
+                timeline_days,
+            )
+            expanded_raw_roadmap = await call_gemini(
+                roadmap_expansion_prompt(profile, parsed_roadmap, topic_count),
+                max_tokens=65536,
+            )
+            parsed_roadmap = _extract_roadmap_json(expanded_raw_roadmap)
+
         roadmap_data = _clamp_roadmap_to_timeline(
-            _extract_roadmap_json(raw_roadmap),
+            parsed_roadmap,
             timeline_days,
         )
 
