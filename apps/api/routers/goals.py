@@ -3,6 +3,7 @@ goals.py — all goal and roadmap endpoints for Hazo.
 
 Endpoints:
   POST   /onboard/start
+  POST   /onboard/followups
   POST   /onboard/q6
   POST   /onboard/complete
   GET    /onboard/status/{session_id}
@@ -54,7 +55,7 @@ from packages.ai.gemini_client import call_gemini, call_gemini_json
 from packages.ai.prompts import (
     concept_resource_curation_prompt,
     domain_classify_prompt,
-    q6_prompt,
+    followup_questions_prompt,
     replan_prompt,
     resource_curation_prompt,
     roadmap_generation_prompt,
@@ -82,171 +83,40 @@ def get_redis() -> aioredis.Redis:
 
 
 # ---------------------------------------------------------------------------
-# Domain question sets  (Q1–Q5)
+# Common onboarding questions
 # ---------------------------------------------------------------------------
 
-DOMAIN_QUESTIONS: Dict[str, List[Dict[str, str]]] = {
-    "competitive_programming": [
-        {
-            "field_name": "timelineWeeks",
-            "question_text": "How many weeks do you have until your target contest or deadline?",
-        },
-        {
-            "field_name": "dsaLevel",
-            "question_text": "What is your current DSA level? (none / basics / intermediate / advanced)",
-        },
-        {
-            "field_name": "dailyHours",
-            "question_text": "How many hours per day can you dedicate to practice?",
-        },
-        {
-            "field_name": "budget",
-            "question_text": "Are you using free resources only, or are you open to paid platforms?",
-        },
-        {
-            "field_name": "existingResources",
-            "question_text": "Which resources do you already use? (e.g. NeetCode, Udemy, Striver, self-study, none)",
-        },
-    ],
-    "academic_exam": [
-        {
-            "field_name": "examNameAndDate",
-            "question_text": "What exam are you preparing for, and what is the exam date? (e.g. GATE CSE, 2 Feb 2026)",
-        },
-        {
-            "field_name": "currentScore",
-            "question_text": "What is your current mock test score or performance level? (e.g. 42/100 in last mock)",
-        },
-        {
-            "field_name": "dailyHours",
-            "question_text": "How many hours per day can you study?",
-        },
-        {
-            "field_name": "budget",
-            "question_text": "Are you using free resources only, or can you invest in paid materials?",
-        },
-        {
-            "field_name": "hasSyllabus",
-            "question_text": "Do you have the official syllabus or previous-year question papers? (yes / no)",
-        },
-    ],
-    "swe_career": [
-        {
-            "field_name": "targetTier",
-            "question_text": "What company tier are you targeting? (FAANG / top-mid-tier / startup)",
-        },
-        {
-            "field_name": "timeline",
-            "question_text": "When do you want to land the job? (e.g. in 3 months, Q3 2026)",
-        },
-        {
-            "field_name": "experienceLevel",
-            "question_text": "What is your current experience level? (student / 0–2 yrs / 2–5 yrs / senior)",
-        },
-        {
-            "field_name": "dailyHours",
-            "question_text": "How many hours per day can you dedicate to prep?",
-        },
-        {
-            "field_name": "budget",
-            "question_text": "Are you open to paid resources (e.g. LeetCode Premium, Grokking courses)?",
-        },
-    ],
-    "fitness": [
-        {
-            "field_name": "specificGoal",
-            "question_text": "What is your specific fitness target? (e.g. run a 5K in under 30 min, lose 10 kg, bench 100 kg)",
-        },
-        {
-            "field_name": "currentFitnessLevel",
-            "question_text": "How would you describe your current fitness level? (sedentary / lightly active / moderately active / athlete)",
-        },
-        {
-            "field_name": "hoursPerWeek",
-            "question_text": "How many hours per week can you train?",
-        },
-        {
-            "field_name": "gymAccess",
-            "question_text": "Do you have gym access, or are you training at home / outdoors?",
-        },
-        {
-            "field_name": "injuries",
-            "question_text": "Do you have any current injuries or physical limitations I should design around?",
-        },
-    ],
-    "language_learning": [
-        {
-            "field_name": "targetLanguage",
-            "question_text": "Which language are you learning?",
-        },
-        {
-            "field_name": "currentLevel",
-            "question_text": "What is your current level in that language? (complete beginner / A1 / A2 / B1 / B2 / C1)",
-        },
-        {
-            "field_name": "dailyHours",
-            "question_text": "How many hours per day can you study?",
-        },
-        {
-            "field_name": "purpose",
-            "question_text": "Why are you learning this language? (travel / work / exam like IELTS / living abroad / hobby)",
-        },
-        {
-            "field_name": "nativeLanguage",
-            "question_text": "What is your native language? (This helps me tailor pronunciation and grammar explanations.)",
-        },
-    ],
-    "web_development": [
-        {
-            "field_name": "track",
-            "question_text": "Are you focusing on frontend, backend, or full-stack development?",
-        },
-        {
-            "field_name": "currentStack",
-            "question_text": "What technologies do you already know? (e.g. basic HTML/CSS, React, Node.js, none)",
-        },
-        {
-            "field_name": "projectGoal",
-            "question_text": "What is the end product you want to build? (e.g. a personal portfolio, a SaaS MVP, a REST API)",
-        },
-        {
-            "field_name": "dailyHours",
-            "question_text": "How many hours per day can you commit to learning and building?",
-        },
-        {
-            "field_name": "budget",
-            "question_text": "Are you open to paid courses or tools (e.g. Udemy, GitHub Copilot)?",
-        },
-    ],
-    "other": [
-        {
-            "field_name": "timeline",
-            "question_text": "What is your target timeline? (e.g. 3 months, by December 2026)",
-        },
-        {
-            "field_name": "knowledgeLevel",
-            "question_text": "How would you describe your current knowledge in this area? (complete beginner / some experience / intermediate / advanced)",
-        },
-        {
-            "field_name": "dailyHours",
-            "question_text": "How many hours per day can you dedicate to this goal?",
-        },
-        {
-            "field_name": "budget",
-            "question_text": "Do you have a budget for courses, tools, or materials?",
-        },
-        {
-            "field_name": "existingMaterials",
-            "question_text": "Do you already have any books, courses, or resources lined up? If yes, list them.",
-        },
-    ],
-}
+COMMON_ONBOARDING_QUESTIONS: List[Dict[str, str]] = [
+    {
+        "field_name": "timeline",
+        "question_text": "What is your target timeline for this goal? Give a concrete range or date if you can.",
+        "input_type": "text",
+    },
+    {
+        "field_name": "dailyHours",
+        "question_text": "On most days, how many hours can you realistically dedicate to this goal?",
+        "input_type": "numeric",
+    },
+    {
+        "field_name": "priorKnowledge",
+        "question_text": "What is your current level or prior experience in this area?",
+        "input_type": "text",
+    },
+    {
+        "field_name": "budget",
+        "question_text": "Are you limited to free resources, or are you open to paid resources if they are worth it?",
+        "input_type": "budget",
+    },
+    {
+        "field_name": "existingMaterials",
+        "question_text": "Do you already have a syllabus, book list, course, notes, or any resources you want Hazo to take into account?",
+        "input_type": "text",
+    },
+]
 
-# Domains without dedicated question sets fall back to "other"
-_QUESTION_FALLBACK_DOMAINS = {
-    "data_science": "other",
-    "design": "other",
-    "entrepreneurship": "other",
+COMMON_QUESTION_FIELDS = {
+    question["field_name"]
+    for question in COMMON_ONBOARDING_QUESTIONS
 }
 
 # ---------------------------------------------------------------------------
@@ -277,9 +147,239 @@ def _extract_roadmap_json(raw: str) -> dict:
         raise ValueError(f"Gemini response was not valid JSON: {str(e)}")
 
 
-def _get_questions_for_domain(domain: str) -> List[Dict[str, str]]:
-    resolved = _QUESTION_FALLBACK_DOMAINS.get(domain, domain)
-    return DOMAIN_QUESTIONS.get(resolved, DOMAIN_QUESTIONS["other"])
+def _get_common_questions() -> List[Dict[str, str]]:
+    return [dict(question) for question in COMMON_ONBOARDING_QUESTIONS]
+
+
+def _question_lookup(questions: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    lookup: Dict[str, Dict[str, Any]] = {}
+    for question in questions:
+        field_name = str(question.get("field_name", "")).strip()
+        if field_name:
+            lookup[field_name] = question
+    return lookup
+
+
+def _build_question_answer_pairs(
+    questions: List[Dict[str, Any]],
+    answers: Dict[str, Any],
+) -> List[Dict[str, str]]:
+    pairs: List[Dict[str, str]] = []
+    lookup = _question_lookup(questions)
+    seen_fields: set[str] = set()
+
+    for question in questions:
+        field_name = str(question.get("field_name", "")).strip()
+        if not field_name:
+            continue
+
+        answer = answers.get(field_name)
+        if answer in (None, ""):
+            continue
+
+        pairs.append(
+            {
+                "field_name": field_name,
+                "question_text": str(question.get("question_text", field_name)).strip(),
+                "answer": str(answer).strip(),
+            }
+        )
+        seen_fields.add(field_name)
+
+    for field_name, answer in answers.items():
+        if field_name in seen_fields or answer in (None, ""):
+            continue
+
+        question = lookup.get(field_name, {})
+        pairs.append(
+            {
+                "field_name": str(field_name),
+                "question_text": str(question.get("question_text", field_name)).strip(),
+                "answer": str(answer).strip(),
+            }
+        )
+
+    return pairs
+
+
+def _derive_prior_knowledge(all_answers: Dict[str, Any]) -> str:
+    return str(
+        all_answers.get("priorKnowledge")
+        or all_answers.get("dsaLevel")
+        or all_answers.get("knowledgeLevel")
+        or all_answers.get("experienceLevel")
+        or all_answers.get("currentFitnessLevel")
+        or all_answers.get("currentLevel")
+        or all_answers.get("currentStack")
+        or "beginner"
+    ).strip()
+
+
+def _derive_external_materials(all_answers: Dict[str, Any]) -> str:
+    return str(
+        all_answers.get("existingMaterials")
+        or all_answers.get("hasSyllabus")
+        or all_answers.get("existingResources")
+        or all_answers.get("existingMaterialsOrSyllabus")
+        or ""
+    ).strip()
+
+
+def _derive_domain_specific_context(qa_pairs: List[Dict[str, str]]) -> str:
+    contextual_lines: List[str] = []
+    for pair in qa_pairs:
+        field_name = pair.get("field_name", "")
+        if field_name in COMMON_QUESTION_FIELDS:
+            continue
+
+        question_text = pair.get("question_text", field_name).strip()
+        answer = pair.get("answer", "").strip()
+        if answer:
+            contextual_lines.append(f"{question_text}: {answer}")
+
+    return " | ".join(contextual_lines[:8])
+
+
+def _derive_learner_constraints(all_answers: Dict[str, Any]) -> str:
+    candidate_fields = [
+        "timeline",
+        "targetTier",
+        "targetLanguage",
+        "projectGoal",
+        "purpose",
+        "examNameAndDate",
+        "specificGoal",
+        "gymAccess",
+        "injuries",
+    ]
+    parts: List[str] = []
+    for field_name in candidate_fields:
+        value = str(all_answers.get(field_name, "")).strip()
+        if value:
+            parts.append(f"{field_name}: {value}")
+    return " | ".join(parts[:6])
+
+
+def _summarize_availability(user_doc: Optional[dict]) -> str:
+    if not user_doc:
+        return ""
+
+    availability = user_doc.get("availability") or {}
+    if not isinstance(availability, dict):
+        return ""
+
+    weekday_order = [
+        ("monday", "Mon"),
+        ("tuesday", "Tue"),
+        ("wednesday", "Wed"),
+        ("thursday", "Thu"),
+        ("friday", "Fri"),
+        ("saturday", "Sat"),
+        ("sunday", "Sun"),
+    ]
+    day_summaries: List[str] = []
+    for key, label in weekday_order:
+        blocks = availability.get(key) or []
+        if not isinstance(blocks, list) or not blocks:
+            continue
+
+        rendered_blocks: List[str] = []
+        for block in blocks[:3]:
+            if not isinstance(block, dict):
+                continue
+            start = str(block.get("start", "")).strip()
+            end = str(block.get("end", "")).strip()
+            if start and end:
+                rendered_blocks.append(f"{start}-{end}")
+
+        if rendered_blocks:
+            day_summaries.append(f"{label} {' , '.join(rendered_blocks)}".replace(" , ", ", "))
+
+    return "; ".join(day_summaries)
+
+
+def _fallback_followup_questions(domain: str, stage: int) -> List[Dict[str, str]]:
+    domain_label = domain.replace("_", " ")
+    if stage == 1:
+        return [
+            {
+                "field_name": "successDefinition",
+                "question_text": f"For this {domain_label} goal, what would success look like in a measurable or concrete way?",
+                "input_type": "text",
+            },
+            {
+                "field_name": "weakAreas",
+                "question_text": "Which parts feel hardest, weakest, or most confusing right now?",
+                "input_type": "text",
+            },
+            {
+                "field_name": "targetContext",
+                "question_text": "Is there any specific target, syllabus, company, project, exam section, or outcome Hazo should optimize for?",
+                "input_type": "text",
+            },
+        ]
+
+    return [
+        {
+            "field_name": "preferredLearningStyle",
+            "question_text": "How do you learn best for this goal: explanations, practice, projects, revision, mock tests, or a mix?",
+            "input_type": "text",
+        },
+        {
+            "field_name": "resourcePreferences",
+            "question_text": "Are there any resource types or sources you want Hazo to prefer or avoid?",
+            "input_type": "text",
+        },
+    ]
+
+
+async def _generate_followup_questions(
+    *,
+    session: Dict[str, Any],
+    goal_text: str,
+    domain: str,
+    answers: Dict[str, Any],
+    stage: int,
+) -> List[Dict[str, str]]:
+    question_count = 3 if stage == 1 else 2
+    result = await call_gemini_json(
+        followup_questions_prompt(
+            domain=domain,
+            goal_text=goal_text,
+            prior_answers=answers,
+            asked_questions=session.get("asked_questions", []),
+            stage=stage,
+            question_count=question_count,
+        )
+    )
+
+    questions_raw = result.get("questions", []) if isinstance(result, dict) else []
+    normalized: List[Dict[str, str]] = []
+    seen_fields: set[str] = set()
+
+    for idx, question in enumerate(questions_raw):
+        if not isinstance(question, dict):
+            continue
+
+        field_name = str(question.get("field_name", "")).strip()
+        question_text = str(question.get("question_text", "")).strip()
+        input_type = str(question.get("input_type", "text")).strip().lower() or "text"
+
+        if not field_name or not question_text or field_name in seen_fields:
+            continue
+        if input_type not in {"text", "numeric", "budget"}:
+            input_type = "text"
+
+        seen_fields.add(field_name)
+        normalized.append(
+            {
+                "field_name": field_name,
+                "question_text": question_text,
+                "input_type": input_type,
+            }
+        )
+
+    return normalized[:question_count] or _fallback_followup_questions(domain, stage)[:question_count]
 
 
 def _normalise_onboarding_answers(session: dict, answers: dict) -> Dict[str, Any]:
@@ -546,6 +646,8 @@ async def _curate_resources_for_topic(
     next_topic_title: str = "",
     prior_knowledge: str = "",
     domain_specific_answer: str = "",
+    learner_constraints: str = "",
+    resource_queries: Optional[List[str]] = None,
 ) -> Dict[str, List[dict]]:
     prompt_kwargs = {
         "goal_title": goal_title,
@@ -555,6 +657,8 @@ async def _curate_resources_for_topic(
         "next_topic_title": next_topic_title,
         "prior_knowledge": prior_knowledge,
         "domain_specific_answer": domain_specific_answer,
+        "learner_constraints": learner_constraints,
+        "resource_queries": resource_queries or [],
     }
 
     try:
@@ -812,6 +916,8 @@ def _build_topic_context(goal_doc: dict, topic_id: str) -> Dict[str, Any]:
                     "next_topic_title": next_topic.get("title", "") if next_topic else "",
                     "prior_knowledge": goal_doc.get("intake", {}).get("prior_knowledge", ""),
                     "domain_specific_answer": goal_doc.get("intake", {}).get("domain_specific_answer", ""),
+                    "learner_constraints": goal_doc.get("intake", {}).get("learner_constraints", ""),
+                    "resource_queries": topic.get("resource_queries", []),
                 }
 
     return {
@@ -822,6 +928,8 @@ def _build_topic_context(goal_doc: dict, topic_id: str) -> Dict[str, Any]:
         "next_topic_title": "",
         "prior_knowledge": goal_doc.get("intake", {}).get("prior_knowledge", ""),
         "domain_specific_answer": goal_doc.get("intake", {}).get("domain_specific_answer", ""),
+        "learner_constraints": goal_doc.get("intake", {}).get("learner_constraints", ""),
+        "resource_queries": [],
     }
 
 
@@ -908,6 +1016,12 @@ class OnboardQ6Request(BaseModel):
     answers: dict
 
 
+class OnboardFollowupsRequest(BaseModel):
+    session_id: str
+    answers: dict
+    stage: int
+
+
 class OnboardCompleteRequest(BaseModel):
     session_id: str
     all_answers: dict
@@ -931,6 +1045,7 @@ async def _generate_roadmap_background(
     goal_text: str,
     domain: str,
     all_answers: dict,
+    asked_questions: List[Dict[str, Any]],
 ) -> None:
     """
     Full roadmap generation pipeline (runs as a FastAPI BackgroundTask).
@@ -955,31 +1070,24 @@ async def _generate_roadmap_background(
         await _set_redis_json(status_key, {"status": "processing"}, ex=7200)
 
         # ── b. Build profile and generate roadmap ──────────────────────────
-        daily_hours = float(all_answers.get("dailyHours", 2))
+        daily_hours = float(all_answers.get("dailyHours", 2) or 2)
         timeline_days = _derive_timeline_days(all_answers)
-
-        # Academic exams may give a concrete date; try to derive days from it.
-        exam_date_raw: Optional[str] = all_answers.get("examNameAndDate", "")
-        # (We just use timelineWeeks for simplicity; actual parsing is domain-specific.)
+        user_doc = await users_col.find_one({"_id": ObjectId(user_id)})
+        qa_pairs = _build_question_answer_pairs(asked_questions, all_answers)
 
         profile = {
             "goal_title": goal_text,
             "domain": domain,
             "timeline_days": timeline_days,
             "daily_hours": daily_hours,
-            "prior_knowledge": all_answers.get("dsaLevel")
-                or all_answers.get("knowledgeLevel")
-                or all_answers.get("experienceLevel")
-                or all_answers.get("currentFitnessLevel")
-                or all_answers.get("currentLevel")
-                or all_answers.get("currentStack")
-                or "beginner",
+            "prior_knowledge": _derive_prior_knowledge(all_answers),
             "budget": all_answers.get("budget", "free"),
-            "external_materials": all_answers.get("existingMaterials")
-                or all_answers.get("hasSyllabus")
-                or all_answers.get("existingResources")
-                or "",
-            "domain_specific_answer": all_answers.get("domainSpecificAnswer", ""),
+            "external_materials": _derive_external_materials(all_answers),
+            "domain_specific_answer": _derive_domain_specific_context(qa_pairs),
+            "learner_constraints": _derive_learner_constraints(all_answers),
+            "availability_summary": _summarize_availability(user_doc),
+            "answers": all_answers,
+            "qa_pairs": qa_pairs,
         }
 
         raw_roadmap = await call_gemini(roadmap_generation_prompt(profile), max_tokens=65536)
@@ -1029,6 +1137,8 @@ async def _generate_roadmap_background(
                         next_topic_title=phase_context["next_topic_title"],
                         prior_knowledge=profile["prior_knowledge"],
                         domain_specific_answer=profile["domain_specific_answer"],
+                        learner_constraints=profile["learner_constraints"],
+                        resource_queries=topic.get("resource_queries", []),
                     )
                 )
                 if not isinstance(resources_raw, list):
@@ -1128,6 +1238,10 @@ async def _generate_roadmap_background(
                 budget="paid" if "paid" in budget.lower() else "free",
                 external_materials=profile["external_materials"] or None,
                 domain_specific_answer=profile["domain_specific_answer"] or None,
+                learner_constraints=profile["learner_constraints"] or None,
+                availability_summary=profile["availability_summary"] or None,
+                full_answers=all_answers,
+                qa_pairs=qa_pairs,
             ),
             phases=phases_embed,
             current_phase_index=0,
@@ -1269,7 +1383,7 @@ async def onboard_start(
     current_user: UserDB = Depends(get_current_user),
 ):
     """
-    Step 1 of onboarding. Classifies the goal domain and returns Q1–Q5.
+    Step 1 of onboarding. Classifies the goal domain and returns common setup questions.
     Stores an onboarding session in Redis (TTL 2 h).
     """
     # 1. Domain classification
@@ -1286,16 +1400,17 @@ async def onboard_start(
     domain = classification.get("domain", "other")
     confidence = classification.get("confidence", 0.0)
 
-    # 2. Fetch Q1–Q5 for the domain
-    questions = _get_questions_for_domain(domain)
+    # 2. Return shared onboarding questions first; the next batches are generated later.
+    questions = _get_common_questions()
 
     # 3. Store session in Redis
     session_data = {
         "domain": domain,
         "goal_text": body.goal_text,
         "questions": questions,
+        "asked_questions": questions,
         "answers": {},
-        "q6": None,
+        "followup_batches": {},
     }
     session_key = f"onboard:{current_user.id}"
     await _set_redis_json(session_key, session_data, ex=7200)
@@ -1308,6 +1423,46 @@ async def onboard_start(
     }
 
 
+# ── POST /onboard/followups ───────────────────────────────────────────────
+
+@router.post("/onboard/followups")
+async def onboard_followups(
+    body: OnboardFollowupsRequest,
+    current_user: UserDB = Depends(get_current_user),
+):
+    session_key = f"onboard:{body.session_id}"
+    session = await _get_redis_json(session_key)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Onboarding session not found or expired.")
+
+    stage = max(1, min(int(body.stage), 2))
+    session["answers"].update(_normalise_onboarding_answers(session, body.answers))
+
+    cached_batches = session.get("followup_batches") or {}
+    cached_questions = cached_batches.get(str(stage))
+    if cached_questions:
+        return {"stage": stage, "questions": cached_questions}
+
+    try:
+        questions = await _generate_followup_questions(
+            session=session,
+            goal_text=session["goal_text"],
+            domain=session["domain"],
+            answers=session["answers"],
+            stage=stage,
+        )
+    except Exception as exc:
+        logger.warning("Falling back to static onboarding follow-ups for stage %s: %s", stage, exc)
+        questions = _fallback_followup_questions(session["domain"], stage)
+
+    session.setdefault("asked_questions", []).extend(questions)
+    cached_batches[str(stage)] = questions
+    session["followup_batches"] = cached_batches
+    await _set_redis_json(session_key, session, ex=7200)
+
+    return {"stage": stage, "questions": questions}
+
+
 # ── POST /onboard/q6 ──────────────────────────────────────────────────────
 
 @router.post("/onboard/q6")
@@ -1316,37 +1471,33 @@ async def onboard_q6(
     current_user: UserDB = Depends(get_current_user),
 ):
     """
-    Step 2 of onboarding. Merges Q1–Q5 answers and returns an AI-generated Q6.
+    Backward-compatible single-question endpoint for older clients.
     """
-    session_key = f"onboard:{body.session_id}"
-    session = await _get_redis_json(session_key)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Onboarding session not found or expired.")
-
-    # Merge answers
-    session["answers"].update(_normalise_onboarding_answers(session, body.answers))
-
-    # Generate Q6
     try:
-        q6_result = await call_gemini_json(
-            q6_prompt(
-                domain=session["domain"],
-                goal_text=session["goal_text"],
-                prior_answers=session["answers"],
-            )
+        followup_result = await onboard_followups(
+            OnboardFollowupsRequest(
+                session_id=body.session_id,
+                answers=body.answers,
+                stage=1,
+            ),
+            current_user=current_user,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"AI Q6 generation failed: {exc}",
         )
-
-    session["q6"] = q6_result
-    await _set_redis_json(session_key, session, ex=7200)
+    questions = followup_result.get("questions", [])
+    first_question = questions[0] if questions else {
+        "question_text": "What is the biggest thing that should shape this roadmap?",
+        "field_name": "domainSpecificAnswer",
+    }
 
     return {
-        "question": q6_result.get("question", ""),
-        "field_name": q6_result.get("field_name", "domainSpecificAnswer"),
+        "question": first_question.get("question_text", ""),
+        "field_name": first_question.get("field_name", "domainSpecificAnswer"),
     }
 
 
@@ -1383,6 +1534,7 @@ async def onboard_complete(
         goal_text=goal_text,
         domain=domain,
         all_answers=all_answers,
+        asked_questions=session.get("asked_questions", []),
     )
 
     return {"session_id": body.session_id, "status": "processing"}

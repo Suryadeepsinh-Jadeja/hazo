@@ -88,6 +88,10 @@ class GoalIntake(BaseModel):
     budget: Literal["free", "paid"]
     external_materials: Optional[str] = None
     domain_specific_answer: Optional[str] = None
+    learner_constraints: Optional[str] = None
+    availability_summary: Optional[str] = None
+    full_answers: Dict[str, Any] = Field(default_factory=dict)
+    qa_pairs: List[Dict[str, str]] = Field(default_factory=list)
 
 class GoalDB(MongoDocumentModel):
     user_id: str

@@ -57,15 +57,22 @@ export const STALE_TIMES = {
 
 // ─── TypeScript interfaces ───────────────────────────────────────────────────
 
-export interface OnboardStartResponse {
-  session_id: string;
-  goal_text: string;
-  domain: string;
-  questions: string[];
+export interface OnboardingQuestion {
+  field_name: string;
+  question_text: string;
+  input_type?: 'text' | 'numeric' | 'budget';
 }
 
-export interface OnboardQ6Response {
-  question_6: string;
+export interface OnboardStartResponse {
+  session_id: string;
+  domain: string;
+  confidence?: number;
+  questions: OnboardingQuestion[];
+}
+
+export interface OnboardFollowupsResponse {
+  stage: number;
+  questions: OnboardingQuestion[];
 }
 
 export interface OnboardCompleteResponse {
@@ -207,13 +214,15 @@ export const goals = {
       return data;
     },
 
-    q6: async (
+    followups: async (
       sessionId: string,
       answers: Record<string, string>,
-    ): Promise<OnboardQ6Response> => {
-      const { data } = await api.post('/api/v1/goals/onboard/q6', {
+      stage: 1 | 2,
+    ): Promise<OnboardFollowupsResponse> => {
+      const { data } = await api.post('/api/v1/goals/onboard/followups', {
         session_id: sessionId,
         answers,
+        stage,
       });
       return data;
     },

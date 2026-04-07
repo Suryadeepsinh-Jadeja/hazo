@@ -1,20 +1,19 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { ChevronLeft } from 'lucide-react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { theme } from '../../constants/theme';
-import api from '../../lib/api';
+import { goals, OnboardingQuestion } from '../../lib/api';
 
 type Message = { id: string, text: string, isUser: boolean, isTyping?: boolean };
-type QuestionConfig = { field_name: string; question_text: string };
+type QuestionConfig = OnboardingQuestion;
 
 const DEFAULT_QUESTIONS: QuestionConfig[] = [
-  { field_name: 'timeline', question_text: "What is your target timeline?" },
-  { field_name: 'knowledgeLevel', question_text: "What is your prior knowledge or experience in this field?" },
-  { field_name: 'dailyHours', question_text: "How many hours can you dedicate daily?" },
-  { field_name: 'budget', question_text: "What is your budget for learning materials?" },
-  { field_name: 'existingMaterials', question_text: "Any specific external materials you want to use? (Optional)" }
+  { field_name: 'timeline', question_text: 'What is your target timeline for this goal?', input_type: 'text' },
+  { field_name: 'dailyHours', question_text: 'On most days, how many hours can you dedicate to this goal?', input_type: 'numeric' },
+  { field_name: 'priorKnowledge', question_text: 'What is your current level or prior experience in this area?', input_type: 'text' },
+  { field_name: 'budget', question_text: 'Are you limited to free resources, or open to paid ones?', input_type: 'budget' },
+  { field_name: 'existingMaterials', question_text: 'Any syllabus, books, courses, notes, or resources Hazo should consider? (Optional)', input_type: 'text' },
 ];
 
 export const QuestionsScreen = () => {
@@ -23,26 +22,29 @@ export const QuestionsScreen = () => {
   const { sessionId, questions: backendQuestions } = route.params || {};
 
   const [messages, setMessages] = useState<Message[]>([]);
+  const [questions, setQuestions] = useState<QuestionConfig[]>([]);
   const [currentQIndex, setCurrentQIndex] = useState(0);
+  const [followupStage, setFollowupStage] = useState(0);
   const [inputText, setInputText] = useState('');
   const [inputType, setInputType] = useState<'text' | 'numeric' | 'budget'>('text');
-  const [q6FieldName, setQ6FieldName] = useState('domainSpecificAnswer');
   const [answerMap, setAnswerMap] = useState<Record<string, string>>({});
   
   const flatListRef = useRef<FlatList>(null);
   const questionConfigs = useMemo<QuestionConfig[]>(() => {
-    if (backendQuestions?.length >= 5) {
+    if (backendQuestions?.length) {
       return backendQuestions.map((question: any, index: number) => {
         if (typeof question === 'string') {
           return {
             field_name: `q${index + 1}`,
             question_text: question,
+            input_type: 'text',
           };
         }
 
         return {
           field_name: question.field_name || `q${index + 1}`,
           question_text: question.question_text || question.label || question.question || DEFAULT_QUESTIONS[index]?.question_text || `Question ${index + 1}`,
+          input_type: question.input_type || DEFAULT_QUESTIONS[index]?.input_type || 'text',
         };
       });
     }
@@ -51,64 +53,117 @@ export const QuestionsScreen = () => {
   }, [backendQuestions]);
 
   useEffect(() => {
-    askNextQuestion();
-  }, [currentQIndex]);
+    setQuestions(questionConfigs);
+  }, [questionConfigs]);
 
-  const askNextQuestion = () => {
-    const isCompleted = currentQIndex >= 6;
-    if (isCompleted) {
+  const removeTypingIndicator = () => {
+    setMessages((prev) => prev.filter((message) => !message.isTyping));
+  };
+
+  const resolveInputType = (question?: QuestionConfig): 'text' | 'numeric' | 'budget' => {
+    if (!question) {
+      return 'text';
+    }
+    if (question.input_type) {
+      return question.input_type;
+    }
+    if (question.field_name === 'budget') {
+      return 'budget';
+    }
+    if (['dailyHours', 'timelineWeeks', 'hoursPerWeek'].includes(question.field_name)) {
+      return 'numeric';
+    }
+    return 'text';
+  };
+
+  const askQuestion = (question: QuestionConfig, questionIndex: number) => {
+    const typingMsg = { id: `typing-${questionIndex}-${Date.now()}`, text: '...', isUser: false, isTyping: true };
+    setMessages((prev) => [...prev, typingMsg]);
+
+    setTimeout(() => {
+      removeTypingIndicator();
+      setInputType(resolveInputType(question));
+      setMessages((prev) => [
+        ...prev,
+        { id: `q-${questionIndex}-${question.field_name}`, text: question.question_text, isUser: false },
+      ]);
+    }, 600);
+  };
+
+  const advanceConversation = async (
+    nextQuestionIndex: number,
+    nextAnswers: Record<string, string>,
+    availableQuestions: QuestionConfig[] = questions,
+    completedFollowupStages: number = followupStage,
+  ) => {
+    if (nextQuestionIndex < availableQuestions.length) {
+      askQuestion(availableQuestions[nextQuestionIndex], nextQuestionIndex);
+      return;
+    }
+
+    if (!sessionId) {
       finalizeOnboarding();
       return;
     }
 
-    // Typing indicator delay
-    const typingMsg = { id: `typing-${currentQIndex}`, text: '...', isUser: false, isTyping: true };
-    setMessages(prev => [...prev, typingMsg]);
+    if (completedFollowupStages < 2) {
+      const typingMsg = { id: `typing-stage-${completedFollowupStages + 1}`, text: '...', isUser: false, isTyping: true };
+      setMessages((prev) => [...prev, typingMsg]);
+      try {
+        const nextStage = (completedFollowupStages + 1) as 1 | 2;
+        const res = await goals.onboard.followups(sessionId, nextAnswers, nextStage);
+        const newQuestions = (res.questions || []).filter(
+          (question) => question?.field_name && question?.question_text,
+        );
+        removeTypingIndicator();
 
-    setTimeout(async () => {
-      let qText = '';
-
-      if (currentQIndex < 5) {
-        qText = questionConfigs[currentQIndex]?.question_text || DEFAULT_QUESTIONS[currentQIndex]?.question_text;
-
-        const currentFieldName = questionConfigs[currentQIndex]?.field_name;
-        if (currentFieldName === 'budget') setInputType('budget');
-        else if (['dailyHours', 'timelineWeeks', 'hoursPerWeek'].includes(currentFieldName)) setInputType('numeric');
-        else setInputType('text');
-      } else {
-        // Fetch custom AI Question 6 via POST
-        try {
-          const res = await api.post('/api/v1/goals/onboard/q6', { session_id: sessionId, answers: answerMap });
-          qText = res.data.question || "Lastly, what do you feel is your biggest obstacle right now?";
-          setQ6FieldName(res.data.field_name || 'domainSpecificAnswer');
-        } catch {
-          qText = "Lastly, what do you feel is your biggest obstacle right now?";
+        if (!newQuestions.length) {
+          finalizeOnboarding();
+          return;
         }
-        setInputType('text');
+
+        const updatedQuestions = [...availableQuestions, ...newQuestions];
+        setQuestions(updatedQuestions);
+        setFollowupStage(nextStage);
+        askQuestion(newQuestions[0], nextQuestionIndex);
+        return;
+      } catch (error: any) {
+        removeTypingIndicator();
+        Alert.alert(
+          'Could not continue onboarding',
+          error?.response?.data?.detail || 'Please try again in a moment.',
+        );
+        return;
       }
+    }
 
-      setMessages(prev => {
-        const filtered = prev.filter(m => !m.isTyping);
-        return [...filtered, { id: `q-${currentQIndex}`, text: qText, isUser: false }];
-      });
-
-    }, 600);
+    finalizeOnboarding();
   };
+
+  useEffect(() => {
+    if (!questions.length || messages.length > 0) {
+      return;
+    }
+
+    advanceConversation(0, {});
+  }, [questions]);
 
   const handleSend = (textOverride?: string) => {
     const textToSend = textOverride !== undefined ? textOverride : inputText;
-    if (!textToSend.trim() && currentQIndex !== 4) return; // Q5 is optional
+    const currentQuestion = questions[currentQIndex];
+    const isOptional = currentQuestion?.field_name === 'existingMaterials';
+    if (!textToSend.trim() && !isOptional) return;
 
     const answer = textToSend.trim() || 'Skipped';
-    const fieldName = currentQIndex < questionConfigs.length
-      ? questionConfigs[currentQIndex]?.field_name || `q${currentQIndex + 1}`
-      : q6FieldName;
+    const fieldName = currentQuestion?.field_name || `q${currentQIndex + 1}`;
+    const nextAnswers = { ...answerMap, [fieldName]: answer };
+    const nextQuestionIndex = currentQIndex + 1;
 
     setMessages(prev => [...prev, { id: `a-${currentQIndex}`, text: answer, isUser: true }]);
-    setAnswerMap(prev => ({ ...prev, [fieldName]: answer }));
+    setAnswerMap(nextAnswers);
     setInputText('');
-    
-    setCurrentQIndex(prev => prev + 1);
+    setCurrentQIndex(nextQuestionIndex);
+    advanceConversation(nextQuestionIndex, nextAnswers);
   };
 
   const finalizeOnboarding = async () => {
@@ -116,6 +171,9 @@ export const QuestionsScreen = () => {
   };
 
   const renderInputArea = () => {
+    const currentQuestion = questions[currentQIndex];
+    const isOptional = currentQuestion?.field_name === 'existingMaterials';
+
     if (inputType === 'budget') {
       return (
         <View style={styles.chipRow}>
@@ -139,7 +197,7 @@ export const QuestionsScreen = () => {
           onChangeText={setInputText}
           keyboardType={inputType === 'numeric' ? 'numeric' : 'default'}
         />
-        {(inputText.trim().length > 0 || currentQIndex === 4) && (
+        {(inputText.trim().length > 0 || isOptional) && (
           <TouchableOpacity style={styles.sendButton} onPress={() => handleSend()}>
             <Text style={styles.sendButtonText}>{inputText ? 'Send' : 'Skip'}</Text>
           </TouchableOpacity>

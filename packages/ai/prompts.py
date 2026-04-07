@@ -2,9 +2,11 @@
 Prompt templates for the Hazo AI-powered goal execution app.
 
 Every function accepts Python inputs and returns a fully-formed prompt string
-ready to be sent to Gemini.  Each prompt embeds explicit output-format
+ready to be sent to Gemini. Each prompt embeds explicit output-format
 instructions and inline examples so the model knows exactly what to produce.
 """
+
+import json
 
 
 # ── 1. Domain Classification ────────────────────────────────────────────────
@@ -115,6 +117,97 @@ Output format (no additional text):
 # ── 2. Q6 — Domain-Expert Follow-Up Question ────────────────────────────────
 
 
+def _qa_lines(qa_pairs: list[dict] | None) -> str:
+    if not qa_pairs:
+        return "  (none yet)"
+
+    rendered: list[str] = []
+    for pair in qa_pairs:
+        question = str(pair.get("question_text", "")).strip()
+        answer = str(pair.get("answer", "")).strip()
+        field_name = str(pair.get("field_name", "")).strip()
+        if question and answer:
+            rendered.append(f'  - {question} -> {answer}')
+        elif field_name and answer:
+            rendered.append(f"  - {field_name}: {answer}")
+
+    return "\n".join(rendered) if rendered else "  (none yet)"
+
+
+def followup_questions_prompt(
+    domain: str,
+    goal_text: str,
+    prior_answers: dict,
+    asked_questions: list[dict],
+    *,
+    stage: int,
+    question_count: int,
+) -> str:
+    """Generate a batch of high-signal follow-up questions for onboarding."""
+    prior_str = "\n".join(
+        f"  - {k}: {v}" for k, v in prior_answers.items()
+    ) if prior_answers else "  (none yet)"
+    asked_str = "\n".join(
+        f'  - {item.get("question_text", "")}'
+        for item in asked_questions
+        if item.get("question_text")
+    ) or "  (none yet)"
+
+    stage_name = "first deep-dive batch" if stage == 1 else "final precision batch"
+
+    return f"""You are a world-class {domain} mentor creating a hyper-personalised learning roadmap.
+
+The learner has already provided a goal and answered some onboarding questions.
+Your job is to ask the next batch of questions that would MOST improve roadmap quality.
+
+You are generating the {stage_name}. Return EXACTLY {question_count} questions.
+
+── CURRENT GOAL ─────────────────────────────────────────────
+
+Goal: "{goal_text}"
+Domain: {domain}
+
+Answers so far:
+{prior_str}
+
+Questions already asked:
+{asked_str}
+
+── WHAT GOOD QUESTIONS LOOK LIKE ───────────────────────────
+
+- They change topic ordering, pacing, or weighting.
+- They uncover weak areas, target sub-goals, constraints, or required deliverables.
+- They are tightly tied to THIS goal, not generic productivity trivia.
+- They do NOT repeat timeline, daily hours, budget, or prior knowledge if those are already known.
+- They should sound like a serious mentor probing for the missing details.
+
+Stage-specific guidance:
+- Stage 1: identify the big missing context that shapes the curriculum.
+- Stage 2: identify the last few details needed to sharpen sequencing, examples, and resource quality.
+
+Avoid:
+- Duplicate or near-duplicate questions.
+- Questions whose answers would not change the roadmap.
+- Questions that can be inferred from existing answers.
+
+── OUTPUT FORMAT ───────────────────────────────────────────
+
+Return valid JSON with no markdown fences and no extra explanation:
+
+{{
+  "questions": [
+    {{
+      "field_name": "weakAreas",
+      "question_text": "Which parts of Indian Polity or governance do you currently find most confusing or weak?",
+      "input_type": "text"
+    }}
+  ]
+}}
+
+Use camelCase field names. Allowed input_type values: text | numeric | budget.
+"""
+
+
 def q6_prompt(domain: str, goal_text: str, prior_answers: dict) -> str:
     """Generate one deep, domain-specific follow-up question.
 
@@ -125,59 +218,20 @@ def q6_prompt(domain: str, goal_text: str, prior_answers: dict) -> str:
         f"  - {k}: {v}" for k, v in prior_answers.items()
     ) if prior_answers else "  (none yet)"
 
-    return f"""You are a world-class {domain} mentor creating a hyper-personalised
-learning roadmap.  The user already answered some basic questions.
+    return f"""You are a world-class {domain} mentor designing a high-signal onboarding flow.
 
-Your job: generate ONE follow-up question that only a true domain expert would
-ask — a question that generic productivity apps never think to include.
+Generate ONE domain-specific follow-up question that would materially improve the roadmap.
+Do not repeat timeline, budget, or daily-hours questions if those are already known.
 
-── EXAMPLE Q6 PER DOMAIN ────────────────────────────────────
-
-competitive_programming:
-  "Which algorithmic paradigm do you struggle with most — greedy, divide-and-conquer, or DP?  Knowing this lets me front-load weak areas."
-
-swe_career:
-  "Are you targeting L3/L4 new-grad or L5+ senior roles?  The interview bar and prep strategy differ significantly."
-
-academic_exam:
-  "Which previous-year paper sections do you consistently lose marks in?  I'll weight those topics higher."
-
-web_development:
-  "Is your goal to ship a production product or build portfolio projects?  The tech depth changes drastically."
-
-data_science:
-  "Do you need to present findings to non-technical stakeholders?  If yes, storytelling and viz skills become a core track."
-
-design:
-  "Are you designing for mobile-first or desktop-first workflows?  Constraint patterns differ and affect the curriculum."
-
-language_learning:
-  "Will you have daily immersion access (native speakers, media)?  This determines whether we optimise for input-heavy or output-heavy practice."
-
-fitness:
-  "Do you have any current injuries or mobility limitations?  This changes exercise selection and progression."
-
-entrepreneurship:
-  "Do you plan to bootstrap or raise funding?  The early milestones and skills required are very different."
-
-other:
-  "What does 'success' look like for you in measurable terms?  A clear target lets me design checkpoints."
-
-── CONTEXT ──────────────────────────────────────────────────
-
-Domain: {domain}
 Goal: "{goal_text}"
-Prior answers:
+Known answers:
 {prior_str}
 
-── INSTRUCTIONS ─────────────────────────────────────────────
-
-Return a JSON object with:
-- "question" — the follow-up question text (1–2 sentences)
-- "field_name" — a camelCase identifier for the answer field
-
-Output format (no extra text):
-{{"question": "Which algorithmic paradigm trips you up most?", "field_name": "weakParadigm"}}
+Return valid JSON only:
+{{
+  "question": "Which parts of operating systems or DBMS usually confuse you the most in mock tests?",
+  "field_name": "weakAreas"
+}}
 """
 
 
@@ -198,8 +252,14 @@ def roadmap_generation_prompt(profile: dict) -> str:
     budget = profile.get("budget", "free")
     external_materials = profile.get("external_materials", "")
     domain_specific_answer = profile.get("domain_specific_answer", "")
+    learner_constraints = profile.get("learner_constraints", "")
+    availability_summary = profile.get("availability_summary", "")
+    qa_pairs = profile.get("qa_pairs", [])
+    answers = profile.get("answers", {})
     max_topic_minutes = int(daily_hours * 60 * 1.2)
     desired_phase_count = min(6, max(3, timeline_days // 10))
+    qa_context = _qa_lines(qa_pairs)
+    answers_json = json.dumps(answers, indent=2, ensure_ascii=False) if answers else "{}"
 
     return f"""You are an elite curriculum designer building a concise, focused learning roadmap for Hazo.
 
@@ -213,6 +273,14 @@ Prior knowledge: {prior_knowledge}
 Budget: {budget}
 External materials / syllabus: {external_materials if external_materials else "none provided"}
 Domain-specific context: {domain_specific_answer if domain_specific_answer else "none"}
+Learner constraints / preferences: {learner_constraints if learner_constraints else "none provided"}
+Weekly availability summary: {availability_summary if availability_summary else "not provided"}
+
+Question-answer context:
+{qa_context}
+
+Structured answers:
+{answers_json}
 
 ── HARD RULES ───────────────────────────────────────────────
 
@@ -236,10 +304,15 @@ Domain-specific context: {domain_specific_answer if domain_specific_answer else 
    GOOD: "Solve 8 two-pointer problems with shrinking window patterns"
    BAD: "Learn two pointers"
 
-5. resource_queries: EXACTLY 2 per topic, highly specific.
-   GOOD: "Abdul Bari stack data structure lecture"
-   BAD:  "stack tutorial"
-   Queries should be tailored to the exact scope of the topic, not the whole phase.
+5. resource_queries: EXACTLY 3 per topic, highly specific, and each query must serve a different intent:
+   - one for concept understanding
+   - one for worked examples / official reference / practice material
+   - one for an alternate explanation or narrower sub-skill
+   GOOD: "UPSC parliament legislative procedures committee system explainer with examples"
+   GOOD: "Lok Sabha Rajya Sabha committee procedure official notes"
+   BAD:  "parliament tutorial"
+   Do NOT default to the same creator or provider across topics unless that source is clearly the best fit.
+   Use topic scope, learner level, goal, and known weak areas to shape the queries.
 
 6. ai_note: ONE sentence max. Explain WHY this topic comes now.
    Reference the previous topic or prerequisite.
@@ -265,6 +338,11 @@ Domain-specific context: {domain_specific_answer if domain_specific_answer else 
    Use the learner's prior knowledge, budget, timeline, and any supplied materials.
    If external materials were provided, align the roadmap to them where sensible.
    If the learner is time-constrained, prioritize the highest-yield sequence.
+   Use the detailed question-answer context to:
+   - front-load weak areas,
+   - reflect target exam/company/project specifics,
+   - match the learner's constraints and preferred depth,
+   - and choose realistic daily workloads.
 
 10. Total duration of all phases must equal {timeline_days} days.
 
@@ -288,7 +366,8 @@ No markdown fences, no explanation — just the XML-wrapped JSON.
           "ai_note": "One sentence: why this topic now.",
           "resource_queries": [
             "Specific search query 1",
-            "Specific search query 2"
+            "Specific search query 2",
+            "Specific search query 3"
           ]
         }}
       ]
@@ -319,12 +398,16 @@ def resource_curation_prompt(
     next_topic_title: str = "",
     prior_knowledge: str = "",
     domain_specific_answer: str = "",
+    learner_constraints: str = "",
+    resource_queries: list[str] | None = None,
 ) -> str:
     """Curate 3–4 real, high-confidence resources for a specific topic."""
     phase_topics = phase_topics or []
     phase_topic_lines = "\n".join(f"  - {title}" for title in phase_topics[:8]) if phase_topics else "  (not provided)"
+    resource_queries = resource_queries or []
+    resource_query_lines = "\n".join(f"  - {query}" for query in resource_queries[:4]) if resource_queries else "  (not provided)"
 
-    return f"""You are a learning-resource curator.  Find 3–4 real, specific
+    return f"""You are a learning-resource curator. Find 3-4 real, specific
 resources for the topic below that you are HIGHLY CONFIDENT actually exist.
 
 ── GOAL + PHASE CONTEXT ─────────────────────────────────────
@@ -339,47 +422,32 @@ Current topic: "{topic_title}"
 Next topic: "{next_topic_title or 'none'}"
 Learner level: "{prior_knowledge or 'unknown'}"
 Domain-specific learner context: "{domain_specific_answer or 'none'}"
+Learner constraints / target details: "{learner_constraints or 'none'}"
+Search intents already generated for this topic:
+{resource_query_lines}
 
 Domain: {domain}
 Budget: {budget}
 
 ── DOMAIN-SPECIFIC PREFERENCES ─────────────────────────────
 
-competitive_programming:
-  - MUST include 1-2 practice links from trusted coding platforms only:
-    LeetCode, CodeChef, Codeforces, CSES, or AtCoder.
-  - Prefer Abdul Bari, NeetCode, or Striver video explanations for concept learning.
-  - Never use random blogs or obscure judge platforms for practice.
-
-swe_career:
-  - For DSA / interview-prep topics, MUST include 1-2 practice links from:
-    LeetCode, CodeChef, Codeforces, CSES, or AtCoder.
-  - Prefer NeetCode, Striver, or Abdul Bari for concept videos.
-  - For system design or behavioural topics, prefer high-quality articles/videos instead of coding judges.
+competitive_programming / swe_career:
+  - Include 1-2 direct practice links from respected judge platforms when the topic is problem-solving oriented.
+  - For concept teaching, prefer the clearest high-signal explainer available, not the same default creator every time.
+  - Official docs, strong articles, university notes, and reputable videos are all acceptable when they fit better.
 
 academic_exam:
-  - Prefer NPTEL lectures, official syllabus PDFs, university materials.
-  - Include previous-year question papers when relevant.
+  - Prefer official syllabi, government/official reference material, strong class notes, previous-year-question analysis,
+    and precise explainers that match the exact unit.
+  - Do not default to NCERT or a coaching video unless it is truly the best fit for this exact topic.
 
-web_development:
-  - Prefer official docs (MDN, React docs, Next.js docs).
-  - Include free project-based tutorials (freeCodeCamp, The Odin Project).
+web_development / data_science:
+  - Prefer official documentation, strong tutorials, reputable articles, notebooks, and project material.
+  - Use video only when it is genuinely clearer than docs/articles for the topic.
 
-data_science:
-  - Prefer Kaggle notebooks, Scikit-learn docs, StatQuest videos.
-  - Include dataset links for practice.
-
-design:
-  - Prefer Figma community files, Refactoring UI excerpts, Nielsen Norman Group articles.
-
-language_learning:
-  - Prefer Anki decks, italki, official proficiency exam guides.
-
-fitness:
-  - Prefer evidence-based sources (Jeff Nippard, AthleanX, NSCA guidelines).
-
-entrepreneurship:
-  - Prefer Y Combinator library, Indie Hackers case studies, Stratechery.
+design / language_learning / fitness / entrepreneurship / other:
+  - Prefer authoritative, well-explained, directly usable resources.
+  - Mix formats when helpful: article, course, documentation, worksheet, case study, exercise set, or video.
 
 ── CRITICAL RULE ────────────────────────────────────────────
 
@@ -391,6 +459,8 @@ The resources must fit THIS topic's role inside THIS phase.
 Do not return generic beginner links if the topic is mid-phase or advanced.
 Do not return resources that cover the entire field when the topic is narrow.
 Prefer canonical, high-signal resources a serious learner would actually use.
+Do not overfit to a tiny shortlist of famous providers. Use the best source for the topic, even if it is less famous,
+as long as it is reputable and highly relevant.
 
 For coding practice resources:
 - ONLY use these domains: leetcode.com, codechef.com, codeforces.com, cses.fi, atcoder.jp
@@ -400,7 +470,7 @@ For coding practice resources:
 
 For YouTube:
 - Only use direct watch URLs that you are highly confident are active
-- Prefer established channels like NeetCode, Striver, Abdul Bari, freeCodeCamp
+- Prefer established, high-quality channels, but do not force the same names repeatedly
 - If you are unsure about a video URL, omit it instead of guessing
 
 ── OUTPUT FORMAT ────────────────────────────────────────────
@@ -440,10 +510,14 @@ def concept_resource_curation_prompt(
     next_topic_title: str = "",
     prior_knowledge: str = "",
     domain_specific_answer: str = "",
+    learner_constraints: str = "",
+    resource_queries: list[str] | None = None,
 ) -> str:
     """Curate concept-learning materials with a strong preference for valid videos."""
     phase_topics = phase_topics or []
     phase_topic_lines = "\n".join(f"  - {title}" for title in phase_topics[:8]) if phase_topics else "  (not provided)"
+    resource_queries = resource_queries or []
+    resource_query_lines = "\n".join(f"  - {query}" for query in resource_queries[:4]) if resource_queries else "  (not provided)"
 
     return f"""You are a learning-resource curator. Find concept-learning resources for this topic.
 
@@ -456,28 +530,32 @@ Current topic: "{topic_title}"
 Next topic: "{next_topic_title or 'none'}"
 Learner level: "{prior_knowledge or 'unknown'}"
 Domain-specific learner context: "{domain_specific_answer or 'none'}"
+Learner constraints / target details: "{learner_constraints or 'none'}"
+Search intents already generated for this topic:
+{resource_query_lines}
 Domain: {domain}
 Budget: {budget}
 
 Goal:
 - Return 2 or 3 HIGH-CONFIDENCE concept resources.
-- At least 2 MUST be YouTube videos when possible.
-- Prefer established channels and canonical explainers.
+- Prefer the clearest, most topic-matched explainers available.
+- Include video when it is the best teaching medium, but do not force the same famous creators every time.
 - Make the depth match where this topic sits in the phase.
 - Avoid generic introductions if the surrounding phase is already beyond basics.
 
 For coding / DSA topics:
-- Strongly prefer NeetCode, Striver, Abdul Bari, or freeCodeCamp.
-- Use direct YouTube watch URLs only.
+- Use direct YouTube watch URLs only when you choose video.
+- Official docs, strong articles, and university notes are also acceptable if they explain the exact topic better.
 
 For non-coding topics:
-- Prefer the best available video explainers and one strong article/doc if helpful.
+- Prefer the best available explainers and one strong article/doc if helpful.
 
 Rules:
 - Only include URLs you are highly confident exist.
 - If unsure about a video URL, omit it.
 - Do not include practice problem links here.
 - It is better to return 2 solid links than 5 uncertain ones.
+- Do not overuse the same provider across unrelated topics.
 
 Return a JSON array only:
 [
@@ -504,10 +582,14 @@ def supporting_resource_curation_prompt(
     next_topic_title: str = "",
     prior_knowledge: str = "",
     domain_specific_answer: str = "",
+    learner_constraints: str = "",
+    resource_queries: list[str] | None = None,
 ) -> str:
     """Curate non-video support resources such as practice links, docs, or notes."""
     phase_topics = phase_topics or []
     phase_topic_lines = "\n".join(f"  - {title}" for title in phase_topics[:8]) if phase_topics else "  (not provided)"
+    resource_queries = resource_queries or []
+    resource_query_lines = "\n".join(f"  - {query}" for query in resource_queries[:4]) if resource_queries else "  (not provided)"
 
     return f"""You are a learning-resource curator. Find support resources for this topic.
 
@@ -520,6 +602,9 @@ Current topic: "{topic_title}"
 Next topic: "{next_topic_title or 'none'}"
 Learner level: "{prior_knowledge or 'unknown'}"
 Domain-specific learner context: "{domain_specific_answer or 'none'}"
+Learner constraints / target details: "{learner_constraints or 'none'}"
+Search intents already generated for this topic:
+{resource_query_lines}
 Domain: {domain}
 Budget: {budget}
 
@@ -535,13 +620,14 @@ For coding / DSA topics:
 - Never use random blogs or low-quality practice sites.
 
 For non-coding topics:
-- Prefer official docs, strong articles, notes, or high-quality exercises.
+- Prefer official docs, strong articles, notes, worksheets, case studies, or high-quality exercises.
 
 Rules:
 - Only include URLs you are highly confident exist.
 - Do not include YouTube links here.
 - Avoid homepages, listing pages, and search pages.
 - Prefer links the learner can use immediately.
+- Do not default to a famous provider if a more exact resource fits the topic better.
 
 Return a JSON array only:
 [
