@@ -94,5 +94,13 @@ async def init_indexes():
     await create_indexes_safely(rooms_col, [
         IndexModel([("domain", ASCENDING), ("is_private", ASCENDING)], name="domain_is_private_idx")
     ], "rooms")
+
+    mentor_col = get_mentor_sessions_col()
+    await create_indexes_safely(mentor_col, [
+        IndexModel(
+            [("user_id", ASCENDING), ("goal_id", ASCENDING), ("topic_id", ASCENDING), ("created_at", ASCENDING)],
+            name="mentor_user_goal_topic_created_idx",
+        )
+    ], "mentor_sessions")
     
     logging.info("Database indexes initialized successfully.")

@@ -61,7 +61,15 @@ export const RoadmapScreen = () => {
       ?.flatMap((phase: any) => phase.topics || [])
       ?.find((topic: any) => topic.day_index === roadmap?.current_day_index)?.title ||
     roadmap?.title;
-  const handleFabPress = () => navigation.navigate('MentorScreen', { goalId, topicTitle: currentTopicTitle });
+  const currentTopicId =
+    roadmap?.phases
+      ?.flatMap((phase: any) => phase.topics || [])
+      ?.find((topic: any) => topic.day_index === roadmap?.current_day_index)?.topic_id;
+  const handleFabPress = () => navigation.navigate('MentorScreen', {
+    goalId,
+    topicId: currentTopicId,
+    topicTitle: currentTopicTitle,
+  });
 
   const fabAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: fabScale.value }]

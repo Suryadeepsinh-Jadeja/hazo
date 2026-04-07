@@ -132,7 +132,10 @@ export const GoalCard = ({ goal, onPress, onDelete, deleting = false }: GoalCard
             },
             deleting && styles.deleteButtonDisabled,
           ]}
-          onPress={onDelete}
+          onPress={(event) => {
+            event.stopPropagation?.();
+            onDelete();
+          }}
           disabled={deleting}
           activeOpacity={0.85}
         >

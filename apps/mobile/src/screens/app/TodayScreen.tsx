@@ -419,8 +419,8 @@ export const TodayScreen = () => {
     }
   }, [completeMutation]);
 
-  const handleAskMentor = useCallback((goalId: string, topicTitle?: string) => {
-    navigation.navigate('Mentor', { goalId, topicTitle });
+  const handleAskMentor = useCallback((goalId: string, topicId?: string, topicTitle?: string) => {
+    navigation.navigate('Mentor', { goalId, topicId, topicTitle });
   }, [navigation]);
 
   const handleOpenLink = useCallback(async (url: string) => {
@@ -670,7 +670,7 @@ export const TodayScreen = () => {
 
                         <TouchableOpacity
                           style={[styles.deckSecondaryButton, { borderColor: `${visualTheme.onAccent}55` }]}
-                          onPress={() => handleAskMentor(goal._id, primaryTopic.title || taskCard.goal_title || goal.title)}
+                          onPress={() => handleAskMentor(goal._id, primaryTopic.topic_id, primaryTopic.title || taskCard.goal_title || goal.title)}
                         >
                           <Sparkles color={visualTheme.onAccent} size={14} />
                           <Text style={[styles.deckSecondaryButtonText, { color: visualTheme.onAccent }]}>Mentor</Text>

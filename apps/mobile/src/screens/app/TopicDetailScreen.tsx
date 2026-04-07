@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -194,12 +193,29 @@ export const TopicDetailScreen = () => {
     }
   };
 
-  const openSearchQuery = async (query: string) => {
-    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-    const supported = await Linking.canOpenURL(url);
-    if (supported) {
-      await Linking.openURL(url);
+  const handleAskMentor = () => {
+    if (!goalId) {
+      return;
     }
+
+    navigation.navigate('Mentor', {
+      goalId,
+      topicId,
+      topicTitle: topic?.title || goalTitle || 'Current topic',
+    });
+  };
+
+  const handleAskMentorWithPrompt = (prompt: string) => {
+    if (!goalId) {
+      return;
+    }
+
+    navigation.navigate('Mentor', {
+      goalId,
+      topicId,
+      topicTitle: topic?.title || goalTitle || 'Current topic',
+      initialPrompt: prompt,
+    });
   };
 
   if (loading) {
@@ -267,32 +283,50 @@ export const TopicDetailScreen = () => {
             </View>
           </View>
 
-          <TouchableOpacity
-            style={[
-              styles.completeButton,
-              {
-                backgroundColor: topic.status === 'done' ? visualTheme.surfaceAlt : visualTheme.accent,
-              },
-              completeTopicMutation.isPending && styles.completeButtonPending,
-            ]}
-            onPress={() => completeTopicMutation.mutate()}
-            disabled={completeTopicMutation.isPending || topic.status === 'done' || topic.status === 'skipped'}
-          >
-            <Text
+          <View style={styles.heroActionRow}>
+            <TouchableOpacity
               style={[
-                styles.completeButtonText,
+                styles.completeButton,
+                styles.primaryActionButton,
                 {
-                  color: topic.status === 'done' ? visualTheme.accent : theme.colors.neutral.white,
+                  backgroundColor: topic.status === 'done' ? visualTheme.surfaceAlt : visualTheme.accent,
+                },
+                completeTopicMutation.isPending && styles.completeButtonPending,
+              ]}
+              onPress={() => completeTopicMutation.mutate()}
+              disabled={completeTopicMutation.isPending || topic.status === 'done' || topic.status === 'skipped'}
+            >
+              <Text
+                style={[
+                  styles.completeButtonText,
+                  {
+                    color: topic.status === 'done' ? visualTheme.accent : theme.colors.neutral.white,
+                  },
+                ]}
+              >
+                {topic.status === 'done'
+                  ? 'Day Complete'
+                  : completeTopicMutation.isPending
+                    ? 'Marking complete...'
+                    : 'Mark All Done'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.mentorButton,
+                {
+                  borderColor: visualTheme.accent,
+                  backgroundColor: visualTheme.surfaceAlt,
                 },
               ]}
+              onPress={handleAskMentor}
+              activeOpacity={0.85}
             >
-              {topic.status === 'done'
-                ? 'Day Complete'
-                : completeTopicMutation.isPending
-                  ? 'Marking complete...'
-                  : 'Mark All Done'}
-            </Text>
-          </TouchableOpacity>
+              <Sparkles color={visualTheme.accent} size={16} />
+              <Text style={[styles.mentorButtonText, { color: visualTheme.accent }]}>Ask Mentor</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {!!topic.ai_note && (
@@ -364,13 +398,13 @@ export const TopicDetailScreen = () => {
 
         {!!topic.resource_queries?.length && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Search Prompts</Text>
+            <Text style={styles.sectionTitle}>Ask Mentor AI</Text>
             <View style={styles.queryList}>
               {topic.resource_queries.map((query) => (
                 <TouchableOpacity
                   key={query}
                   style={styles.queryChip}
-                  onPress={() => openSearchQuery(query)}
+                  onPress={() => handleAskMentorWithPrompt(query)}
                 >
                   <Text style={styles.queryChipText}>{query}</Text>
                 </TouchableOpacity>
@@ -500,6 +534,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: theme.spacing[16],
   },
+  heroActionRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: theme.spacing[12],
+    marginTop: theme.spacing[16],
+  },
+  primaryActionButton: {
+    flex: 1,
+    marginTop: 0,
+  },
   completeButtonPending: {
     opacity: 0.75,
   },
@@ -507,6 +551,21 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.fontBody,
     fontSize: theme.typography.fontSizes.md,
     fontWeight: theme.typography.fontWeights.semibold,
+  },
+  mentorButton: {
+    minHeight: 52,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    paddingHorizontal: theme.spacing[16],
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mentorButtonText: {
+    fontFamily: theme.typography.fontBody,
+    fontSize: theme.typography.fontSizes.base,
+    fontWeight: theme.typography.fontWeights.semibold,
+    marginLeft: theme.spacing[8],
   },
   section: {
     marginBottom: theme.spacing[24],

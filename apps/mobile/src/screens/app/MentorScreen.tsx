@@ -6,12 +6,18 @@ import { ChevronLeft, ArrowUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import Config from 'react-native-config';
-import api from '../../lib/api';
+import { mentor } from '../../lib/api';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+}
+
+interface MentorHistoryMessage {
+  role?: string;
+  content?: string;
+  created_at?: string;
 }
 
 const QUICK_ACTIONS = [
@@ -63,7 +69,7 @@ const TypingIndicator = () => (
 export const MentorScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { goalId, topicTitle = "Goal Intake" } = route.params || {};
+  const { goalId, topicId, topicTitle = "Goal Intake", initialPrompt } = route.params || {};
   const { session } = useAuthStore();
   const token = session?.access_token;
 
@@ -75,6 +81,7 @@ export const MentorScreen = () => {
   const [historyLoadError, setHistoryLoadError] = useState<string | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
+  const hasAutoSentInitialPrompt = useRef(false);
 
   const formatMentorError = (error: unknown) => {
     if (error instanceof Error && error.message) {
@@ -205,14 +212,14 @@ export const MentorScreen = () => {
       try {
         setIsLoadingHistory(true);
         setHistoryLoadError(null);
-        const response = await api.get(`/api/v1/mentor/history/${goalId}`);
-        const historyMessages = Array.isArray(response.data) ? response.data : [];
+        setMessages([]);
+        const historyMessages: MentorHistoryMessage[] = await mentor.getHistory(goalId, topicId);
         const mappedMessages: Message[] = historyMessages
-          .filter((item) => typeof item?.content === 'string' && item.content.trim().length > 0)
-          .map((item, index) => ({
+          .filter((item: MentorHistoryMessage) => typeof item?.content === 'string' && item.content.trim().length > 0)
+          .map((item: MentorHistoryMessage, index: number) => ({
             id: `${item.created_at || 'history'}-${index}`,
             role: (item.role === 'user' ? 'user' : 'assistant') as Message['role'],
-            content: item.content,
+            content: item.content || '',
           }))
           .reverse();
 
@@ -237,7 +244,11 @@ export const MentorScreen = () => {
     return () => {
       isMounted = false;
     };
-  }, [goalId, token]);
+  }, [goalId, token, topicId]);
+
+  useEffect(() => {
+    hasAutoSentInitialPrompt.current = false;
+  }, [goalId, topicId, initialPrompt]);
 
   const handleSend = async (overrideText?: string) => {
     const textToSend = overrideText || inputText;
@@ -274,6 +285,7 @@ export const MentorScreen = () => {
         },
         body: JSON.stringify({ 
           goal_id: goalId, 
+          topic_id: topicId,
           message, 
           history: currentMessages.slice(0, 10).reverse() // send chronological past history
         })
@@ -369,6 +381,15 @@ export const MentorScreen = () => {
       setIsStreaming(false);
     }
   };
+
+  useEffect(() => {
+    if (!initialPrompt || isLoadingHistory || hasAutoSentInitialPrompt.current) {
+      return;
+    }
+
+    hasAutoSentInitialPrompt.current = true;
+    handleSend(initialPrompt);
+  }, [initialPrompt, isLoadingHistory]);
 
   const renderMessage = ({ item, index }: { item: Message, index: number }) => {
     const isUser = item.role === 'user';

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GoalInputScreen } from '../screens/onboarding/GoalInputScreen';
 import { QuestionsScreen } from '../screens/onboarding/QuestionsScreen';
 import { AvailabilitySetupScreen } from '../screens/onboarding/AvailabilitySetupScreen';
@@ -10,38 +11,48 @@ import { theme } from '../../constants/theme';
 
 const Stack = createNativeStackNavigator();
 
-const OnboardingHeader = ({ progress }: { progress: number }) => (
-  <View style={styles.headerContainer}>
-    <View style={styles.progressBarBg}>
-      <View style={[styles.progressBarFill, { width: `${progress * 100}%` }]} />
+const OnboardingHeader = ({ progress }: { progress: number }) => {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View
+      style={[
+        styles.headerShell,
+        {
+          paddingTop: insets.top,
+        },
+      ]}
+    >
+      <View style={styles.headerContainer}>
+        <View style={styles.progressBarBg}>
+          <View style={[styles.progressBarFill, { width: `${progress * 100}%` }]} />
+        </View>
+      </View>
     </View>
-  </View>
-);
+  );
+};
 
 export const OnboardingStack = () => {
   return (
     <Stack.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: theme.colors.neutral.cream },
-        headerShadowVisible: false,
-        headerBackVisible: false,
-        headerTintColor: theme.colors.primary.ink,
+        headerShown: false,
       }}
     >
       <Stack.Screen 
         name="GoalInput" 
         component={GoalInputScreen} 
-        options={{ headerTitle: () => <OnboardingHeader progress={0.15} /> }} 
+        options={{ headerShown: true, header: () => <OnboardingHeader progress={0.15} /> }} 
       />
       <Stack.Screen 
         name="Questions" 
         component={QuestionsScreen} 
-        options={{ headerTitle: () => <OnboardingHeader progress={0.5} /> }} 
+        options={{ headerShown: true, header: () => <OnboardingHeader progress={0.5} /> }} 
       />
       <Stack.Screen
         name="AvailabilitySetup"
         component={AvailabilitySetupScreen}
-        options={{ headerTitle: () => <OnboardingHeader progress={0.72} /> }}
+        options={{ headerShown: true, header: () => <OnboardingHeader progress={0.72} /> }}
       />
       <Stack.Screen 
         name="Generating" 
@@ -58,8 +69,10 @@ export const OnboardingStack = () => {
 };
 
 const styles = StyleSheet.create({
+  headerShell: {
+    backgroundColor: theme.colors.neutral.cream,
+  },
   headerContainer: {
-    width: '100%',
     height: 40,
     justifyContent: 'center',
     paddingHorizontal: theme.spacing[16],

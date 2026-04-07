@@ -295,6 +295,11 @@ export const goals = {
     const { data } = await api.post(`/api/v1/goals/${goalId}/resume`);
     return data;
   },
+
+  delete: async (goalId: string): Promise<{ message: string }> => {
+    const { data } = await api.delete(`/api/v1/goals/${goalId}`);
+    return data;
+  },
 };
 
 export const users = {
@@ -395,8 +400,10 @@ export const community = {
 // Do NOT add it here — the MentorScreen implementation is already correct.
 
 export const mentor = {
-  getHistory: async (goalId: string) => {
-    const { data } = await api.get(`/api/v1/mentor/history/${goalId}`);
+  getHistory: async (goalId: string, topicId?: string) => {
+    const { data } = await api.get(`/api/v1/mentor/history/${goalId}`, {
+      params: topicId ? { topic_id: topicId } : undefined,
+    });
     return data;
   },
 };

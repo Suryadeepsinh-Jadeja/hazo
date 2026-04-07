@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
-import api from '../../lib/api';
+import { goals as goalsApi } from '../../lib/api';
 import { GoalCard } from '../../components/GoalCard';
 import { useGoalStore } from '../../store/goalStore';
 
@@ -16,19 +16,18 @@ export const GoalsScreen = () => {
   const { data: goals, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['goals'],
     staleTime: 5 * 60 * 1000, // 5 minutes
-    queryFn: async () => {
-      const res = await api.get('/api/v1/goals');
-      return res.data;
-    }
+    queryFn: goalsApi.getGoals,
   });
 
   const deleteGoalMutation = useMutation({
     mutationFn: async (goalId: string) => {
-      await api.delete(`/api/v1/goals/${goalId}`);
+      await goalsApi.delete(goalId);
+      return goalId;
     },
-    onSuccess: (_, deletedGoalId) => {
+    onSuccess: (deletedGoalId) => {
       const remainingGoals = (goals || []).filter((goal: any) => goal._id !== deletedGoalId);
       setGoals(remainingGoals);
+      queryClient.setQueryData(['goals'], remainingGoals);
 
       if (activeGoalId === deletedGoalId) {
         setActiveGoalId(remainingGoals[0]?._id || null);
@@ -37,6 +36,12 @@ export const GoalsScreen = () => {
       queryClient.invalidateQueries({ queryKey: ['goals'] });
       queryClient.invalidateQueries({ queryKey: ['todayTask'] });
       queryClient.invalidateQueries({ queryKey: ['mentorHistory'] });
+    },
+    onError: (error: any) => {
+      Alert.alert(
+        'Could not delete goal',
+        error?.response?.data?.detail || error?.message || 'Please try again in a moment.',
+      );
     },
   });
 

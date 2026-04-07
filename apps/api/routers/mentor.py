@@ -16,7 +16,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 import redis.asyncio as aioredis
 from bson import ObjectId
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -64,6 +64,7 @@ class ChatMessage(BaseModel):
 
 class MentorChatRequest(BaseModel):
     goal_id: str
+    topic_id: Optional[str] = None
     message: str
     history: List[ChatMessage] = []
 
@@ -102,6 +103,7 @@ def _safe_str(oid: Any) -> str:
 async def _load_mentor_context(
     user_ids: List[str],
     goal_id: str,
+    topic_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Fetch everything the mentor system prompt needs from MongoDB + Redis.
@@ -137,20 +139,42 @@ async def _load_mentor_context(
     # Current topic and its resources
     topic_title = ""
     resources: List[dict] = []
+    resolved_topic_id = ""
+    resolved_day_index = current_day_idx
     if current_phase_idx < len(phases):
         topics = phases[current_phase_idx].get("topics", [])
+
+        if topic_id:
+            for phase in phases:
+                for t in phase.get("topics", []):
+                    if t.get("topic_id") == topic_id:
+                        phase_title = phase.get("title", "") or phase_title
+                        topic_title = t.get("title", "")
+                        resources = t.get("resources", [])
+                        resolved_topic_id = t.get("topic_id", "")
+                        resolved_day_index = t.get("day_index", current_day_idx)
+                        break
+                if topic_title:
+                    break
+
         # Find topic matching current day
-        for t in topics:
-            if t.get("day_index") == current_day_idx:
-                topic_title = t.get("title", "")
-                resources = t.get("resources", [])
-                break
+        if not topic_title:
+            for t in topics:
+                if t.get("day_index") == current_day_idx:
+                    topic_title = t.get("title", "")
+                    resources = t.get("resources", [])
+                    resolved_topic_id = t.get("topic_id", "")
+                    resolved_day_index = t.get("day_index", current_day_idx)
+                    break
+
         # Fallback: first pending topic in phase
         if not topic_title and topics:
             for t in topics:
                 if t.get("status") in ("pending", "in_progress"):
                     topic_title = t.get("title", "")
                     resources = t.get("resources", [])
+                    resolved_topic_id = t.get("topic_id", "")
+                    resolved_day_index = t.get("day_index", current_day_idx)
                     break
 
     # Top 5 skills by mastery
@@ -173,9 +197,10 @@ async def _load_mentor_context(
     return {
         "goal_title": goal_title,
         "phase_title": phase_title,
-        "day_index": current_day_idx,
+        "day_index": resolved_day_index,
         "total_days": total_days,
         "topic_title": topic_title,
+        "topic_id": resolved_topic_id,
         "resources": resources,
         "prior_knowledge": prior_knowledge,
         "recent_skills": recent_skills,
@@ -230,7 +255,11 @@ async def mentor_chat(
     await pipe.execute()
 
     # ── Load mentor context ─────────────────────────────────────────────────
-    ctx = await _load_mentor_context(user_ids=user_lookup_ids, goal_id=body.goal_id)
+    ctx = await _load_mentor_context(
+        user_ids=user_lookup_ids,
+        goal_id=body.goal_id,
+        topic_id=body.topic_id,
+    )
 
     system_prompt = mentor_system_prompt(
         goal_title=ctx["goal_title"],
@@ -277,6 +306,9 @@ async def mentor_chat(
                     {
                         "user_id": primary_user_id,
                         "goal_id": body.goal_id,
+                        "topic_id": body.topic_id or ctx.get("topic_id") or None,
+                        "topic_title": ctx.get("topic_title") or None,
+                        "day_index": ctx.get("day_index"),
                         "role": "user",
                         "content": body.message,
                         "created_at": now,
@@ -284,6 +316,9 @@ async def mentor_chat(
                     {
                         "user_id": primary_user_id,
                         "goal_id": body.goal_id,
+                        "topic_id": body.topic_id or ctx.get("topic_id") or None,
+                        "topic_title": ctx.get("topic_title") or None,
+                        "day_index": ctx.get("day_index"),
                         "role": "model",
                         "content": full_response,
                         "created_at": now,
@@ -312,15 +347,20 @@ async def mentor_chat(
 @router.get("/history/{goal_id}")
 async def get_mentor_history(
     goal_id: str,
+    topic_id: Optional[str] = Query(default=None),
     current_user: UserDB = Depends(get_current_user),
 ):
     """Return the last 20 mentor messages for this goal."""
 
     mentor_col = get_mentor_sessions_col()
     user_lookup_ids = _dedupe_non_empty([str(current_user.id), current_user.supabase_id])
+    query: Dict[str, Any] = {"user_id": {"$in": user_lookup_ids}, "goal_id": goal_id}
+    if topic_id:
+        query["topic_id"] = topic_id
+
     cursor = (
         mentor_col.find(
-            {"user_id": {"$in": user_lookup_ids}, "goal_id": goal_id},
+            query,
             {"_id": 0, "role": 1, "content": 1, "created_at": 1},
         )
         .sort("created_at", -1)
