@@ -27,15 +27,49 @@ Hazo/
 └── turbo.json      # turbo pipeline config
 ```
 
-## Tech Stack
+## In-Depth Architecture & Libraries
 
-- Mobile: React Native 0.74, TypeScript, React Query, Zustand
-- Backend: FastAPI, Motor, Redis, APScheduler
-- Database: MongoDB
-- Auth: Supabase
-- AI: Google Gemini or OpenRouter
-- Error tracking: Sentry
+This project uses a modern monorepo structure separating the client, backend, and shared AI logic. Below is a comprehensive breakdown of everything used in the project.
 
+### 📱 Mobile App (`apps/mobile`)
+Built with React Native to provide a cross-platform mobile experience.
+- **Core Framework:** React Native 0.74 with TypeScript for type safety.
+- **Navigation:** React Navigation (Native Stack and Bottom Tabs) for screen transitions and tab bars.
+- **State Management (Global):** Zustand is used for lightweight, fast global state management (e.g., storing the user's authentication session and current goal data).
+- **Data Fetching (Server State):** React Query (`@tanstack/react-query`) handles API requests, caching, and optimistic UI updates for interacting with the FastAPI backend.
+- **Local Storage:** React Native Async Storage for persisting simple key-value data across sessions, and React Native Keychain for secure storage of sensitive credentials.
+- **UI & Animations:** 
+  - Shopify FlashList for highly performant scrolling lists.
+  - Lucide React Native for standard iconography.
+  - Reanimated (`react-native-reanimated`) and Gesture Handler for smooth 60fps animations.
+  - React Native Linear Gradient for stylized backgrounds.
+  - React Native Haptic Feedback for tactile user interactions.
+- **System Integration:**
+  - Firebase App & Messaging (`@react-native-firebase`) combined with Notifee (`@notifee/react-native`) for handling push notifications.
+  - React Native Document Picker for selecting timetable PDFs or images.
+  - React Native Community NetInfo to check internet connectivity.
+- **Error Tracking:** Sentry React Native SDK captures unhandled exceptions and performance telemetry.
+
+### ⚙️ Backend API (`apps/api`)
+Built with Python and FastAPI, designed to handle AI workloads efficiently.
+- **Core Framework:** FastAPI running on Uvicorn (ASGI server) for high-performance, asynchronous HTTP request handling.
+- **Database:** MongoDB accessed via `motor` (an asynchronous MongoDB driver for Python). It stores user profiles, goals, skills, and tasks.
+- **Caching & Job Queues:** Redis is used for caching active daily task cards, managing Mentor chat sessions, and acting as the backend for background jobs.
+- **Background Jobs:** APScheduler (`apscheduler`) runs nightly cron jobs within the FastAPI lifecycle. It triggers the generation of new daily tasks for active goals and checks the health of external links.
+- **Authentication:** Validates JWT tokens issued by Supabase using `python-jose` (for cryptography) and `passlib` (for hashing/verification).
+- **Validation:** Pydantic is heavily used for data validation, serialization, and type checking of API payloads, while `pydantic-settings` manages environment variables.
+- **File Uploads:** `python-multipart` parses incoming form data (e.g., timetable image uploads).
+- **Error Tracking:** Sentry SDK (`sentry-sdk`) for backend crash reporting.
+
+### 🧠 AI Layer (`packages/ai`)
+A shared Python package that encapsulates LLM interactions.
+- **Supported Providers:** 
+  - Google Gemini: Handled natively via the `google-generativeai` SDK. Supports multimodal inputs (like parsing timetables).
+  - OpenRouter: Integrated using `httpx` for making custom HTTP calls to OpenRouter's API, allowing the use of various open-source or proprietary models.
+- **System Flows:**
+  - **Roadmap Parsing:** The backend sends a structured prompt with the user's goal and availability. The LLM returns a JSON string, which the backend aggressively parses using regex fallbacks if the LLM includes conversational filler.
+  - **Mentor Chat (SSE):** The Mentor feature uses Server-Sent Events (SSE). As the LLM generates a response, FastAPI streams the tokens back to the React Native app in real-time, creating a typing effect.
+  - **Timetable Extraction:** Users can upload a photo of their timetable. The image is parsed via multipart form data, sent to a multimodal LLM (like Gemini), and the extracted free slots are returned as structured JSON.
 ## Prerequisites
 
 You will need the following installed before setup:
